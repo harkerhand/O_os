@@ -1,0 +1,11 @@
+[package]
+name = "O_os"
+version = "0.1.0"
+authors = ["harkerhand <harkerhand@outlook.com>"]
+edition = "2024"
+
+
+[dependencies]
+log = "0.4"
+[profile.release]
+debug = true

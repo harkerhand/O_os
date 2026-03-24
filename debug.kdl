@@ -1,0 +1,13 @@
+layout {
+    pane split_direction="vertical" {
+        pane command="qemu-system-riscv64" {
+            args "-machine" "virt" "-nographic" "-bios" "./bootloader/opensbi-qemu.bin" "-kernel" "./target/riscv64gc-unknown-none-elf/release/O_os" "-s" "-S"
+        }
+        pane command="riscv64-elf-gdb" {
+            args "-ex" "file ./target/riscv64gc-unknown-none-elf/release/O_os" "-ex" "set arch riscv:rv64" "-ex" "target remote localhost:1234"
+        }
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:status-bar"
+    }
+}
