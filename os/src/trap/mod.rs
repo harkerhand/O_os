@@ -4,17 +4,20 @@
 //! 在这个处理程序中，我们需要根据 scause 寄存器的值来判断是什么类型的事件发生了，并进行相应的处理。
 mod context;
 
-use crate::batch::run_next_app;
-use crate::syscall::syscall;
+use crate::{
+    syscall::syscall,
+    task::{exit_current_and_run_next, suspend_current_and_run_next},
+    timer::set_next_trigger,
+};
 use core::arch::global_asm;
-use log::error;
+use log::{debug, error};
 use riscv::{
-    ExceptionNumber,
-    interrupt::Exception,
+    ExceptionNumber, InterruptNumber,
+    interrupt::{Exception, Interrupt},
     register::{
         mtvec::TrapMode,
         scause::{self, Trap},
-        stval,
+        sie, stval,
         stvec::{self, Stvec},
     },
 };
@@ -50,24 +53,38 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
                 }
                 Ok(Exception::StoreFault) | Ok(Exception::StorePageFault) => {
                     error!("[kernel] 应用页错误，内核杀死了它。");
-                    run_next_app();
+                    exit_current_and_run_next();
                 }
                 Ok(Exception::IllegalInstruction) => {
                     error!("[kernel] 应用执行了非法指令，内核杀死了它。");
-                    run_next_app();
+                    exit_current_and_run_next();
                 }
                 _ => {
                     panic!("未知异常 {:?}, stval = {:#x}!", scause.cause(), stval);
                 }
             }
         }
-        _ => {
-            panic!(
-                "Unsupported trap {:?}, stval = {:#x}!",
-                scause.cause(),
-                stval
-            );
+        Trap::Interrupt(code) => {
+            match Interrupt::from_number(code) {
+                Ok(Interrupt::SupervisorTimer) => {
+                    debug!("[kernel] 时间中断");
+                    // 重新设置下一次 timer interrupt
+                    set_next_trigger();
+                    // 切换到下一个任务
+                    suspend_current_and_run_next();
+                }
+                _ => {
+                    panic!("未知中断 {:?}!", scause.cause());
+                }
+            }
         }
     }
     cx
+}
+
+/// timer interrupt enabled
+pub fn enable_timer_interrupt() {
+    unsafe {
+        sie::set_stimer();
+    }
 }

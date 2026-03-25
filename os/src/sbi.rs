@@ -91,3 +91,15 @@ pub fn shutdown() -> ! {
 pub fn panic_shutdown() -> ! {
     system_reset(0, 1);
 }
+
+const SBI_EXT_TIME: usize = 0x54494D45; // "TIME" in ASCII
+const SBI_TIME_SET_TIMER: usize = 0;
+
+/// SBI 调用设置下一个定时器触发时间
+pub fn set_timer(stime_value: usize) {
+    // 根据 SBI v0.2+ 规范：
+    // a7: EID (0x54494D45)
+    // a6: FID (0)
+    // a0: stime_value (64位计数值)
+    sbi_call(SBI_EXT_TIME, SBI_TIME_SET_TIMER, stime_value, 0, 0);
+}

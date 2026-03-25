@@ -33,6 +33,7 @@ kernel:
 	@cargo build $(MODE_ARG)
 
 clean:
+	@cd ../user && make clean
 	@cargo clean
 
 disasm: kernel

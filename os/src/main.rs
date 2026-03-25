@@ -7,12 +7,15 @@
 
 #[macro_use]
 mod console;
-mod batch;
+mod config;
 mod lang_items;
+mod loader;
 mod logging;
 mod sbi;
 mod sync;
 mod syscall;
+mod task;
+mod timer;
 mod trap;
 
 core::arch::global_asm!(include_str!("entry.asm"));
@@ -38,6 +41,9 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     trap::init();
-    batch::init();
-    batch::run_next_app();
+    loader::load_apps();
+    trap::enable_timer_interrupt();
+    timer::set_next_trigger();
+    task::run_first_task();
+    panic!("Unreachable in rust_main!");
 }

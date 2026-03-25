@@ -34,9 +34,6 @@ __alltraps:
     call trap_handler
 
 __restore:
-    # case1: 伪造 TrapContext 并切换到用户态运行应用程序时，a0 是传入的内核栈顶地址
-    # case2: 从TrapHandler返回时，__restore会被调用，此时 a0 中已经是内核栈顶地址了 
-    mv sp, a0
     # 从内核栈恢复 sstatus、sepc 和 sscratch 寄存器
     ld t0, 32*8(sp)
     ld t1, 33*8(sp)
