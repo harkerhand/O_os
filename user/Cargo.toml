@@ -1,0 +1,12 @@
+[package]
+name = "user_lib"
+version = "0.1.0"
+authors = ["Yifan Wu <shinbokuow@163.com>"]
+edition = "2024"
+
+
+[dependencies]
+riscv = "0.16.0"
+
+[profile.release]
+debug = true

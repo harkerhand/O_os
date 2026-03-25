@@ -1,10 +1,9 @@
 //! SBI call wrappers
 
-const SBI_CONSOLE_PUTCHAR: usize = 1;
-const SBI_SHUTDOWN: usize = 8;
+const SBI_CONSOLE_PUTSTR: usize = 0x4442434E; // "DBCN" in ASCII
 
-/// SBI 调用返回值
 #[allow(dead_code)]
+/// SBI 调用返回值
 #[derive(Copy, Clone, Debug)]
 struct SbiRet {
     error: usize,
@@ -50,13 +49,45 @@ fn sbi_call(extension: usize, function: usize, arg0: usize, arg1: usize, arg2: u
     SbiRet { error, value }
 }
 
-/// 使用 SBI 调用向底层输出一个字符
-pub fn console_putchar(c: usize) {
-    sbi_call(SBI_CONSOLE_PUTCHAR, 0, c, 0, 0);
+#[allow(dead_code)]
+/// 使用 SBI 调用检查底层是否支持某个扩展
+pub fn probe_extension(extension: usize) -> bool {
+    let ret = sbi_call(0x10, 3, extension, 0, 0);
+    ret.error == 0 && ret.value != 0
 }
 
-/// 使用 SBI 调用关闭系统电源
+#[allow(dead_code)]
+/// 使用 SBI 调用向底层输出一个字符
+pub fn console_putchar(c: u8) {
+    sbi_call(SBI_CONSOLE_PUTSTR, 2, c as usize, 0, 0);
+}
+
+/// 使用 SBI 调用向底层输出一个字符串
+pub fn console_putstr(s: &str) {
+    let len = s.len();
+    let ptr = s.as_ptr() as usize;
+    sbi_call(SBI_CONSOLE_PUTSTR, 0, len, ptr, 0);
+}
+
+const SBI_EXT_SRST: usize = 0x53525354;
+const SBI_SRST_RESET: usize = 0;
+
+/// 使用 SRST 扩展关闭系统或重启
+pub fn system_reset(reset_type: usize, reason: usize) -> ! {
+    sbi_call(SBI_EXT_SRST, SBI_SRST_RESET, reset_type, reason, 0);
+    panic!("It should shutdown")
+}
+
+/// 正常关机
+/// Type 0: Shutdown, Reason 0: No Reason
 pub fn shutdown() -> ! {
-    sbi_call(SBI_SHUTDOWN, 0, 0, 0, 0);
-    panic!("It should shutdown!");
+    // Type 0: Shutdown, Reason 0: No Reason
+    system_reset(0, 0);
+}
+
+#[allow(dead_code)]
+/// 故障关机
+/// Type 0: Shutdown, Reason 1: System Failure
+pub fn panic_shutdown() -> ! {
+    system_reset(0, 1);
 }

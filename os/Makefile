@@ -29,6 +29,7 @@ bin: kernel
 build: kernel
 
 kernel:
+	@cd ../user && make build
 	@cargo build $(MODE_ARG)
 
 clean:

@@ -1,0 +1,42 @@
+#![no_std]
+#![feature(linkage)]
+
+#[macro_use]
+pub mod console;
+mod lang_items;
+mod syscall;
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.entry")]
+pub extern "C" fn _start() -> ! {
+    clear_bss();
+    exit(main());
+    panic!("unreachable after sys_exit!");
+}
+
+#[linkage = "weak"]
+#[unsafe(no_mangle)]
+fn main() -> i32 {
+    panic!("Cannot find main!");
+}
+
+fn clear_bss() {
+    unsafe extern "C" {
+        fn start_bss();
+        fn end_bss();
+    }
+    let start = start_bss as *const () as usize;
+    let end = end_bss as *const () as usize;
+    for addr in start..end {
+        unsafe { (addr as *mut u8).write_volatile(0) };
+    }
+}
+
+use syscall::*;
+
+pub fn write(fd: usize, buf: &[u8]) -> isize {
+    sys_write(fd, buf)
+}
+pub fn exit(exit_code: i32) -> isize {
+    sys_exit(exit_code)
+}
