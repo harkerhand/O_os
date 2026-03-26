@@ -1,5 +1,10 @@
 //! SBI call wrappers
 
+use crate::{
+    config::{MEMORY_END, PAGE_SIZE, PAGE_SIZE_BITS},
+    mem::{KERNEL_SPACE, VirtAddr},
+};
+
 const SBI_CONSOLE_PUTSTR: usize = 0x4442434E; // "DBCN" in ASCII
 
 #[allow(dead_code)]
@@ -64,9 +69,38 @@ pub fn console_putchar(c: u8) {
 
 /// 使用 SBI 调用向底层输出一个字符串
 pub fn console_putstr(s: &str) {
-    let len = s.len();
-    let ptr = s.as_ptr() as usize;
-    sbi_call(SBI_CONSOLE_PUTSTR, 0, len, ptr, 0);
+    let start = s.as_ptr() as usize;
+    let end = start
+        .checked_add(s.len())
+        .expect("字符串长度过大导致地址溢出");
+    // 低位地址区域是内核恒等映射，可直接把地址当作物理地址传给 DBCN。
+    if end <= MEMORY_END {
+        sbi_call(SBI_CONSOLE_PUTSTR, 0, s.len(), start, 0);
+        return;
+    }
+
+    // 高地址内核栈是 Framed 映射，必须查内核页表。
+    let mut start = start;
+    while start < end {
+        let va = VirtAddr(start);
+        let page_offset = va.page_offset();
+        let page_remain = PAGE_SIZE - page_offset;
+        let chunk_len = page_remain.min(end - start);
+        let pa = kernel_va_to_pa(start);
+        sbi_call(SBI_CONSOLE_PUTSTR, 0, chunk_len, pa, 0);
+        start += chunk_len;
+    }
+}
+
+fn kernel_va_to_pa(va: usize) -> usize {
+    let va = VirtAddr(va);
+    let vpn = va.floor();
+    let offset = va.page_offset();
+    let pte = KERNEL_SPACE
+        .exclusive_access()
+        .translate(vpn)
+        .expect("console_putstr: kernel va not mapped");
+    (pte.ppn().0 << PAGE_SIZE_BITS) + offset
 }
 
 const SBI_EXT_SRST: usize = 0x53525354;

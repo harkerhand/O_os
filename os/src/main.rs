@@ -4,6 +4,11 @@
 #![deny(warnings)]
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
+
+use log::info;
+
+extern crate alloc;
 
 #[macro_use]
 mod console;
@@ -11,6 +16,7 @@ mod config;
 mod lang_items;
 mod loader;
 mod logging;
+mod mem;
 mod sbi;
 mod sync;
 mod syscall;
@@ -24,8 +30,8 @@ core::arch::global_asm!(include_str!("link_app.S"));
 /// 清空 BSS 段
 pub fn clear_bss() {
     unsafe extern "C" {
-        fn sbss();
-        fn ebss();
+        safe fn sbss();
+        safe fn ebss();
     }
 
     let start = sbss as *const () as usize;
@@ -40,8 +46,9 @@ pub fn clear_bss() {
 pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
+    mem::init();
+    info!("Hello, O_os!");
     trap::init();
-    loader::load_apps();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
     task::run_first_task();
