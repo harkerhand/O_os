@@ -47,7 +47,7 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     mem::init();
-    info!("Hello, O_os!");
+    info!(include_str!("./logo.txt"));
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
