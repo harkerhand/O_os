@@ -1,6 +1,6 @@
 //! 进程相关的系统调用
 use alloc::sync::Arc;
-use log::info;
+use log::{info, warn};
 
 use crate::loader::get_app_data_by_name;
 use crate::mem::{translated_refmut, translated_str};
@@ -36,10 +36,12 @@ pub fn sys_get_time() -> isize {
 
 /// 系统调用：调整程序的 break（即数据段的末尾）的位置，返回旧的 break 地址
 pub fn sys_sbrk(size: i32) -> isize {
-    if let Some(old_brk) = change_program_brk(size) {
-        old_brk as isize
-    } else {
-        -1
+    match change_program_brk(size) {
+        Ok(old_brk) => old_brk as isize,
+        Err(e) => {
+            warn!("调整程序 break 失败: {:?}", e);
+            -1
+        }
     }
 }
 

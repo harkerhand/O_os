@@ -11,7 +11,8 @@ mod syscall;
 
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
-    panic!("Heap allocation error, layout = {:?}", layout);
+    error!("内存分配失败: {:?}", layout);
+    exit(-1)
 }
 
 #[unsafe(no_mangle)]
@@ -27,6 +28,7 @@ fn main() -> i32 {
     panic!("Cannot find main!");
 }
 
+use log::error;
 use syscall::*;
 
 pub fn getchar() -> u8 {

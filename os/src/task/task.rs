@@ -9,6 +9,7 @@ use alloc::{
 
 use crate::{
     config::{TRAP_CONTEXT, USER_STACK_TOP},
+    error::{KernelError, KernelResult},
     mem::{KERNEL_SPACE, MemorySet, PhysPageNum, VirtAddr},
     sync::SyncRefCell,
     task::pid::{self, KernelStack, Pid},
@@ -50,11 +51,11 @@ impl TaskControlBlock {
         self.get_status() == TaskStatus::Zombie
     }
     /// change the location of the program break. return None if failed.
-    pub fn change_program_brk(&mut self, size: i32) -> Option<usize> {
+    pub fn change_program_brk(&mut self, size: i32) -> KernelResult<usize> {
         let old_break = self.program_brk;
         let new_brk = self.program_brk as isize + size as isize;
         if new_brk < self.heap_bottom as isize {
-            return None;
+            return Err(KernelError::ReleaseTooMuch);
         }
         let result = if size < 0 {
             self.memory_set
@@ -63,11 +64,12 @@ impl TaskControlBlock {
             self.memory_set
                 .append_to(VirtAddr(self.heap_bottom), VirtAddr(new_brk as usize))
         };
-        if result {
-            self.program_brk = new_brk as usize;
-            Some(old_break)
-        } else {
-            None
+        match result {
+            Ok(()) => {
+                self.program_brk = new_brk as usize;
+                Ok(old_break)
+            }
+            Err(e) => Err(e),
         }
     }
     pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {

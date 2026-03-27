@@ -9,6 +9,7 @@ use riscv::register::satp::{self, Satp};
 use crate::config::{
     MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_BOTTOM, USER_STACK_TOP,
 };
+use crate::error::{KernelError, KernelResult};
 use crate::mem::addr::{PhysAddr, PhysPageNum, StepByOne, VPNRange, VirtAddr, VirtPageNum};
 use crate::mem::frame_allocator::{FrameTracker, frame_alloc};
 use crate::mem::page_table::{PTEFlags, PageTable, PageTableEntry};
@@ -262,28 +263,27 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
-    pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
+    pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> KernelResult<()> {
         if let Some(area) = self
             .areas
             .iter_mut()
             .find(|area| area.vpn_range.get_start() == start.floor())
         {
             area.shrink_to(&mut self.page_table, new_end.ceil());
-            true
+            Ok(())
         } else {
-            false
+            Err(KernelError::ShrinkVirtAddrNotFound)
         }
     }
-    pub fn append_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
+    pub fn append_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> KernelResult<()> {
         if let Some(area) = self
             .areas
             .iter_mut()
             .find(|area| area.vpn_range.get_start() == start.floor())
         {
-            area.append_to(&mut self.page_table, new_end.ceil());
-            true
+            area.append_to(&mut self.page_table, new_end.ceil())
         } else {
-            false
+            Err(KernelError::AppendVirtAddrNotFound)
         }
     }
     pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
@@ -414,20 +414,21 @@ impl MapArea {
             map_perm: map_area.map_perm,
         }
     }
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) -> KernelResult<()> {
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
-                let frame = frame_alloc().unwrap();
+                let frame = frame_alloc().ok_or(KernelError::FrameAllocFailed)?;
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
             }
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
         page_table.map(vpn, ppn, pte_flags);
+        Ok(())
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
@@ -437,7 +438,7 @@ impl MapArea {
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
+            self.map_one(page_table, vpn).unwrap();
         }
     }
     #[allow(unused)]
@@ -452,11 +453,16 @@ impl MapArea {
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
-    pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
+    pub fn append_to(
+        &mut self,
+        page_table: &mut PageTable,
+        new_end: VirtPageNum,
+    ) -> KernelResult<()> {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
-            self.map_one(page_table, vpn)
+            self.map_one(page_table, vpn)?;
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
+        Ok(())
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before

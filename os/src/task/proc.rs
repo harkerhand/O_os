@@ -3,6 +3,7 @@
 use alloc::sync::Arc;
 
 use crate::{
+    error::KernelResult,
     sync::SyncRefCell,
     task::{
         TaskContext, add_initproc,
@@ -61,7 +62,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
-pub fn change_program_brk(size: i32) -> Option<usize> {
+pub fn change_program_brk(size: i32) -> KernelResult<usize> {
     current_task()
         .unwrap()
         .inner_exclusive_access()
