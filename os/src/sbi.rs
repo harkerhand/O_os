@@ -4,8 +4,7 @@ use crate::{
     config::{MEMORY_END, PAGE_SIZE, PAGE_SIZE_BITS},
     mem::{KERNEL_SPACE, VirtAddr},
 };
-
-const SBI_CONSOLE_PUTSTR: usize = 0x4442434E; // "DBCN" in ASCII
+const SBI_CONSOLE_DBCN: usize = 0x4442434E; // "DBCN" in ASCII
 
 #[allow(dead_code)]
 /// SBI 调用返回值
@@ -64,7 +63,7 @@ pub fn probe_extension(extension: usize) -> bool {
 #[allow(dead_code)]
 /// 使用 SBI 调用向底层输出一个字符
 pub fn console_putchar(c: u8) {
-    sbi_call(SBI_CONSOLE_PUTSTR, 2, c as usize, 0, 0);
+    sbi_call(SBI_CONSOLE_DBCN, 2, c as usize, 0, 0);
 }
 
 /// 使用 SBI 调用向底层输出一个字符串
@@ -75,7 +74,7 @@ pub fn console_putstr(s: &str) {
         .expect("字符串长度过大导致地址溢出");
     // 低位地址区域是内核恒等映射，可直接把地址当作物理地址传给 DBCN。
     if end <= MEMORY_END {
-        sbi_call(SBI_CONSOLE_PUTSTR, 0, s.len(), start, 0);
+        sbi_call(SBI_CONSOLE_DBCN, 0, s.len(), start, 0);
         return;
     }
 
@@ -87,8 +86,37 @@ pub fn console_putstr(s: &str) {
         let page_remain = PAGE_SIZE - page_offset;
         let chunk_len = page_remain.min(end - start);
         let pa = kernel_va_to_pa(start);
-        sbi_call(SBI_CONSOLE_PUTSTR, 0, chunk_len, pa, 0);
+        sbi_call(SBI_CONSOLE_DBCN, 0, chunk_len, pa, 0);
         start += chunk_len;
+    }
+}
+
+pub fn console_getchar() -> usize {
+    let mut input = 0u8;
+    let addr = &mut input as *mut u8 as usize;
+
+    if addr <= MEMORY_END {
+        let ret = sbi_call(SBI_CONSOLE_DBCN, 1, 1, addr, 0);
+        if ret.error == 0 && ret.value > 0 {
+            input as usize
+        } else {
+            0
+        }
+    } else {
+        let va = VirtAddr(addr);
+        let vpn = va.floor();
+        let offset = va.page_offset();
+        let pte = KERNEL_SPACE
+            .exclusive_access()
+            .translate(vpn)
+            .expect("console_getchar: kernel va not mapped");
+        let pa = (pte.ppn().0 << PAGE_SIZE_BITS) + offset;
+        let ret = sbi_call(SBI_CONSOLE_DBCN, 1, 1, pa, 0);
+        if ret.error == 0 && ret.value > 0 {
+            input as usize
+        } else {
+            0
+        }
     }
 }
 

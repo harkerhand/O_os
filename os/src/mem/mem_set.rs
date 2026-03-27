@@ -46,6 +46,27 @@ impl MemorySet {
             areas: Vec::new(),
         }
     }
+    pub fn from_another(other: &MemorySet) -> Self {
+        let mut memory_set = Self::new_bare();
+        memory_set.map_trampoline();
+        for area in &other.areas {
+            let new_area = MapArea::from_another(area);
+            memory_set.push(new_area, None);
+            for vpn in area.vpn_range {
+                let src_ppn = other.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                dst_ppn
+                    .get_bytes_array()
+                    .copy_from_slice(src_ppn.get_bytes_array());
+            }
+        }
+        memory_set
+    }
+
+    pub fn recycle_data_pages(&mut self) {
+        self.areas.clear();
+    }
+
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
@@ -378,6 +399,14 @@ impl MapArea {
             data_frames: BTreeMap::new(),
             map_type,
             map_perm,
+        }
+    }
+    pub fn from_another(map_area: &MapArea) -> Self {
+        Self {
+            vpn_range: map_area.vpn_range,
+            data_frames: BTreeMap::new(),
+            map_type: map_area.map_type,
+            map_perm: map_area.map_perm,
         }
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {

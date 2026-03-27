@@ -1,8 +1,17 @@
 //! 任务控制块
 
+use core::cell::RefMut;
+
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
+
 use crate::{
-    config::{TRAP_CONTEXT, USER_STACK_TOP, kernel_stack_position},
-    mem::{KERNEL_SPACE, MapPermission, MemorySet, PhysPageNum, VirtAddr},
+    config::{TRAP_CONTEXT, USER_STACK_TOP},
+    mem::{KERNEL_SPACE, MemorySet, PhysPageNum, VirtAddr},
+    sync::SyncRefCell,
+    task::pid::{self, KernelStack, Pid},
     trap::{TrapContext, trap_handler},
 };
 
@@ -15,13 +24,16 @@ pub struct TaskControlBlock {
     pub trap_cx_ppn: PhysPageNum,
     pub heap_bottom: usize,
     pub program_brk: usize,
+    pub parent: Option<Weak<ProcessControlBlock>>,
+    pub children: Vec<Arc<ProcessControlBlock>>,
+    pub exit_code: i32,
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum TaskStatus {
     Ready,
     Running,
-    Exited,
+    Zombie,
 }
 
 impl TaskControlBlock {
@@ -31,39 +43,11 @@ impl TaskControlBlock {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    pub fn new(elf_data: &[u8], app_id: usize) -> Self {
-        // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, heap_bottom, entry_point) = MemorySet::from_elf(elf_data);
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
-        let task_status = TaskStatus::Ready;
-        // map a kernel-stack in kernel space
-        let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(app_id);
-        KERNEL_SPACE.exclusive_access().insert_framed_area(
-            VirtAddr(kernel_stack_bottom),
-            VirtAddr(kernel_stack_top),
-            MapPermission::R | MapPermission::W,
-        );
-        let task_control_block = Self {
-            task_status,
-            task_cx: TaskContext::goto_trap_return(kernel_stack_top),
-            memory_set,
-            trap_cx_ppn,
-            heap_bottom,
-            program_brk: heap_bottom,
-        };
-        // prepare TrapContext in user space
-        let trap_cx = task_control_block.get_trap_cx();
-        *trap_cx = TrapContext::app_init_context(
-            entry_point,
-            USER_STACK_TOP,
-            KERNEL_SPACE.exclusive_access().token(),
-            kernel_stack_top,
-            trap_handler as *const () as usize,
-        );
-        task_control_block
+    pub fn get_status(&self) -> TaskStatus {
+        self.task_status
+    }
+    pub fn is_zombie(&self) -> bool {
+        self.get_status() == TaskStatus::Zombie
     }
     /// change the location of the program break. return None if failed.
     pub fn change_program_brk(&mut self, size: i32) -> Option<usize> {
@@ -91,5 +75,110 @@ impl TaskControlBlock {
     }
     pub fn munmap(&mut self, start: usize, end: usize) -> isize {
         self.memory_set.munmap(start, end)
+    }
+}
+
+/// ProcessControlBlock
+pub struct ProcessControlBlock {
+    pub pid: Pid,
+    pub kernel_stack: KernelStack,
+    inner: SyncRefCell<TaskControlBlock>,
+}
+
+impl ProcessControlBlock {
+    pub fn new(elf_data: &[u8]) -> Self {
+        let (memory_set, heap_bottom, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
+        let pid = pid::pid_alloc();
+        let kernel_stack = KernelStack::new(&pid);
+        let kernel_stack_top = kernel_stack.get_top();
+        let pcb = Self {
+            pid,
+            kernel_stack,
+            inner: unsafe {
+                SyncRefCell::new(TaskControlBlock {
+                    task_status: TaskStatus::Ready,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    memory_set,
+                    trap_cx_ppn,
+                    heap_bottom,
+                    program_brk: heap_bottom,
+                    parent: None,
+                    children: Vec::new(),
+                    exit_code: 0,
+                })
+            },
+        };
+        let trap_cx = pcb.inner.exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            USER_STACK_TOP,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as *const () as usize,
+        );
+        pcb
+    }
+
+    pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlock> {
+        self.inner.exclusive_access()
+    }
+    pub fn get_pid(&self) -> usize {
+        self.pid.0
+    }
+    pub fn exec(&self, elf_data: &[u8]) {
+        let (memory_set, heap_bottom, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
+        let mut inner = self.inner.exclusive_access();
+        inner.memory_set = memory_set;
+        inner.trap_cx_ppn = trap_cx_ppn;
+        inner.heap_bottom = heap_bottom;
+        inner.program_brk = heap_bottom;
+        let trap_cx = inner.get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            USER_STACK_TOP,
+            KERNEL_SPACE.exclusive_access().token(),
+            self.kernel_stack.get_top(),
+            trap_handler as *const () as usize,
+        );
+    }
+    pub fn fork(self: &Arc<Self>) -> Arc<Self> {
+        let mut parent_inner = self.inner.exclusive_access();
+        let memory_set = MemorySet::from_another(&parent_inner.memory_set);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
+        let pid = pid::pid_alloc();
+        let kernel_stack = KernelStack::new(&pid);
+        let kernel_stack_top = kernel_stack.get_top();
+        let child_pcb = Arc::new(Self {
+            pid,
+            kernel_stack,
+            inner: unsafe {
+                SyncRefCell::new(TaskControlBlock {
+                    task_status: TaskStatus::Ready,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    memory_set,
+                    trap_cx_ppn,
+                    heap_bottom: parent_inner.heap_bottom,
+                    program_brk: parent_inner.program_brk,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                })
+            },
+        });
+        parent_inner.children.push(child_pcb.clone());
+        let trap_cx = child_pcb.inner.exclusive_access().get_trap_cx();
+        trap_cx.kernel_sp = kernel_stack_top;
+        child_pcb
     }
 }

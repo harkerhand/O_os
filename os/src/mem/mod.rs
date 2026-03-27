@@ -8,7 +8,7 @@ pub use addr::{PhysPageNum, VirtAddr};
 use log::info;
 pub use mem_set::KERNEL_SPACE;
 pub use mem_set::MemorySet;
-pub use page_table::translated_byte_buffer;
+pub use page_table::{translated_byte_buffer, translated_refmut, translated_str};
 mod heap_allocator;
 
 pub fn init() {

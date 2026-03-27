@@ -29,9 +29,3 @@ pub const KERNEL_HEAP_SIZE: usize = 0x1000000;
 
 /// 内核栈的大小，每个应用程序占用 8KB 的内核栈空间
 pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
-/// 获取内核栈的位置，位于 trampoline 的前面，每个应用程序占用一段连续的内核栈空间
-pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
-    let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
-    let bottom = top - KERNEL_STACK_SIZE;
-    (bottom, top)
-}

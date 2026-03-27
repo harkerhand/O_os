@@ -58,29 +58,28 @@ pub fn trap_from_kernel() -> ! {
 /// 处理用户空间的中断、异常和系统调用
 pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
-    let cx = current_trap_cx();
     let scause = scause::read();
     let stval = stval::read();
     match scause.cause() {
         Trap::Exception(code) => {
             match Exception::from_number(code) {
                 Ok(Exception::UserEnvCall) => {
+                    let mut cx = current_trap_cx();
                     cx.sepc += 4; // 跳过 ecall 指令，退出后继续执行下一条指令
-                    cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+                    let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+                    cx = current_trap_cx(); // 可能在 syscall 中发生了任务切换，重新获取 TrapContext
+                    cx.x[10] = result; // 将系统调用的结果放回 a0
                 }
                 Ok(Exception::StoreFault)
                 | Ok(Exception::StorePageFault)
                 | Ok(Exception::LoadFault)
                 | Ok(Exception::LoadPageFault) => {
-                    error!(
-                        "应用页错误，内核杀死了它。错误地址 = {:#x}，错误指令 = {:#x}",
-                        stval, cx.sepc
-                    );
-                    exit_current_and_run_next();
+                    error!("应用页错误，内核杀死了它。");
+                    exit_current_and_run_next(-2);
                 }
                 Ok(Exception::IllegalInstruction) => {
                     error!("应用执行了非法指令，内核杀死了它。");
-                    exit_current_and_run_next();
+                    exit_current_and_run_next(-3);
                 }
                 _ => {
                     panic!("未知异常 {:?}, stval = {:#x}!", scause.cause(), stval);

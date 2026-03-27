@@ -51,23 +51,25 @@ pub fn rust_main() -> ! {
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    task::run_first_task();
+    loader::list_apps();
+    task::run();
     panic!("Unreachable in rust_main!");
 }
 
 fn print_logo() {
+    let time_ms = 200;
     for _ in 0..4 {
         println!("{}", include_str!("./logos/0.txt"));
-        sleep_ms(200);
+        sleep_ms(time_ms);
         print!("\x1b[8A\r");
         println!("{}", include_str!("./logos/1.txt"));
-        sleep_ms(200);
+        sleep_ms(time_ms);
         print!("\x1b[8A\r");
         println!("{}", include_str!("./logos/2.txt"));
-        sleep_ms(200);
+        sleep_ms(time_ms);
         print!("\x1b[8A\r");
         println!("{}", include_str!("./logos/3.txt"));
-        sleep_ms(200);
+        sleep_ms(time_ms);
         print!("\x1b[8A\r");
     }
     println!("{}", include_str!("./logos/0.txt"));
