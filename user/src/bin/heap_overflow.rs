@@ -9,14 +9,20 @@ use log::info;
 
 #[unsafe(no_mangle)]
 fn main() -> i32 {
-    recursive(0);
-    0
-}
+    let mut v = alloc::vec::Vec::new();
+    let mut count = 0;
 
-#[allow(unconditional_recursion)]
-fn recursive(depth: usize) {
-    let _buf = Box::new([0u8; 0x1000000]); // 占用 16MB 的堆空间
-    core::hint::black_box(&_buf); // 防止编译器优化掉 _buf
-    info!("depth: {}", depth);
-    recursive(depth + 1);
+    info!("开始分配小碎片测试...");
+    loop {
+        // 尝试分配 1KB
+        let box_data = Box::new([0u8; 1024]);
+
+        // 关键：将 Box 丢进 Vec，确保内存不被释放
+        v.push(box_data);
+
+        count += 1;
+        if count % 100 == 0 {
+            info!("已成功分配 {} 个碎片 ({} KB)", count, count);
+        }
+    }
 }
