@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
-use log::debug;
+use log::{debug, info};
 use riscv::register::satp::{self, Satp};
 
 use crate::config::{
@@ -240,6 +240,11 @@ impl MemorySet {
                 MapPermission::R | MapPermission::W,
             ),
             None,
+        );
+        info!(
+            "内存映射完成，用户堆底地址 = {:#x}, 入口点 = {:#x}",
+            max_end_va.0,
+            elf.header.pt2.entry_point()
         );
         (
             memory_set,

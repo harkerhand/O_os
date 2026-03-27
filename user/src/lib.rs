@@ -4,16 +4,10 @@
 
 #[macro_use]
 pub mod console;
+mod heap_alloc;
 mod lang_items;
 mod logging;
 mod syscall;
-
-const USER_HEAP_SIZE: usize = 16384;
-
-static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
-
-#[global_allocator]
-static HEAP: LockedHeap<32> = LockedHeap::empty();
 
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
@@ -23,10 +17,6 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
 pub extern "C" fn _start() -> ! {
-    unsafe {
-        HEAP.lock()
-            .init(addr_of_mut!(HEAP_SPACE) as usize, USER_HEAP_SIZE);
-    }
     logging::init();
     exit(main());
 }
@@ -37,9 +27,6 @@ fn main() -> i32 {
     panic!("Cannot find main!");
 }
 
-use core::ptr::addr_of_mut;
-
-use buddy_system_allocator::LockedHeap;
 use syscall::*;
 
 pub fn getchar() -> u8 {
