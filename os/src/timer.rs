@@ -21,3 +21,11 @@ pub fn get_time_ms() -> usize {
 pub fn set_next_trigger() {
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }
+
+pub fn sleep_ms(ms: usize) {
+    let start = get_time();
+    let duration = ms * (CLOCK_FREQ / MSEC_PER_SEC);
+    while get_time() - start < duration {
+        // Do nothing
+    }
+}

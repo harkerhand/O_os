@@ -6,7 +6,7 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 
-use log::info;
+use crate::timer::sleep_ms;
 
 extern crate alloc;
 
@@ -47,10 +47,28 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     mem::init();
-    info!(include_str!("./logo.txt"));
+    print_logo();
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
     task::run_first_task();
     panic!("Unreachable in rust_main!");
+}
+
+fn print_logo() {
+    for _ in 0..4 {
+        println!("{}", include_str!("./logos/0.txt"));
+        sleep_ms(200);
+        print!("\x1b[8A\r");
+        println!("{}", include_str!("./logos/1.txt"));
+        sleep_ms(200);
+        print!("\x1b[8A\r");
+        println!("{}", include_str!("./logos/2.txt"));
+        sleep_ms(200);
+        print!("\x1b[8A\r");
+        println!("{}", include_str!("./logos/3.txt"));
+        sleep_ms(200);
+        print!("\x1b[8A\r");
+    }
+    println!("{}", include_str!("./logos/0.txt"));
 }
