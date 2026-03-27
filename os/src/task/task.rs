@@ -86,4 +86,10 @@ impl TaskControlBlock {
             None
         }
     }
+    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
+        self.memory_set.mmap(start, end, prot)
+    }
+    pub fn munmap(&mut self, start: usize, end: usize) -> isize {
+        self.memory_set.munmap(start, end)
+    }
 }

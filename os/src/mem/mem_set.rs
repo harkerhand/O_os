@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
-use log::info;
+use log::debug;
 use riscv::register::satp::{self, Satp};
 
 use crate::config::{
@@ -82,23 +82,23 @@ impl MemorySet {
         // 映射 trampoline
         memory_set.map_trampoline();
         // 映射 elf 中的各个段，权限根据段类型设置
-        info!(
+        debug!(
             ".text [{:#x}, {:#x})",
             stext as *const () as usize, etext as *const () as usize
         );
-        info!(
+        debug!(
             ".rodata [{:#x}, {:#x})",
             srodata as *const () as usize, erodata as *const () as usize
         );
-        info!(
+        debug!(
             ".data [{:#x}, {:#x})",
             sdata as *const () as usize, edata as *const () as usize
         );
-        info!(
+        debug!(
             ".bss [{:#x}, {:#x})",
             sbss_with_stack as *const () as usize, ebss as *const () as usize
         );
-        info!("mapping .text section");
+        debug!("mapping .text section");
         memory_set.push(
             MapArea::new(
                 VirtAddr(stext as *const () as usize),
@@ -108,7 +108,7 @@ impl MemorySet {
             ),
             None,
         );
-        info!("mapping .rodata section");
+        debug!("mapping .rodata section");
         memory_set.push(
             MapArea::new(
                 VirtAddr(srodata as *const () as usize),
@@ -118,7 +118,7 @@ impl MemorySet {
             ),
             None,
         );
-        info!("mapping .data section");
+        debug!("mapping .data section");
         memory_set.push(
             MapArea::new(
                 VirtAddr(sdata as *const () as usize),
@@ -128,7 +128,7 @@ impl MemorySet {
             ),
             None,
         );
-        info!("mapping .bss section");
+        debug!("mapping .bss section");
         memory_set.push(
             MapArea::new(
                 VirtAddr(sbss_with_stack as *const () as usize),
@@ -138,7 +138,7 @@ impl MemorySet {
             ),
             None,
         );
-        info!("mapping physical memory");
+        debug!("mapping physical memory");
         memory_set.push(
             MapArea::new(
                 VirtAddr(ekernel as *const () as usize),
@@ -260,6 +260,100 @@ impl MemorySet {
             false
         }
     }
+    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
+        let start_va = VirtAddr(start);
+        let end_va = VirtAddr(end);
+        if self
+            .areas
+            .iter()
+            .any(|area| area.is_overlap(start_va, end_va))
+        {
+            return -1;
+        }
+        let permission = MapPermission::from_bits(prot as u8).unwrap() | MapPermission::U;
+        self.insert_framed_area(start_va, end_va, permission);
+        0
+    }
+    pub fn munmap(&mut self, start: usize, end: usize) -> isize {
+        let start_va = VirtAddr(start);
+        let end_va = VirtAddr(end);
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        loop {
+            let mut target_idx = None;
+            for (i, area) in self.areas.iter().enumerate() {
+                if area.is_overlap(start_va, end_va) {
+                    target_idx = Some(i);
+                    break;
+                }
+            }
+            if let Some(idx) = target_idx {
+                let mut area = self.areas.remove(idx);
+
+                // 1. 先把用户请求的这段 [start_vpn, end_vpn) 给 unmap 掉（物理回收）
+                // 只有重叠的部分才需要 unmap
+                let unmap_start = start_vpn.max(area.vpn_range.get_start());
+                let unmap_end = end_vpn.min(area.vpn_range.get_end());
+
+                for vpn in VPNRange::new(unmap_start, unmap_end) {
+                    area.unmap_one(&mut self.page_table, vpn);
+                }
+
+                // 2. 逻辑切分：检查卸载后，原来的 area 是否还有“剩余”部分
+
+                // 情况 A: 左侧有剩余 [original_start, start_vpn)
+                if area.vpn_range.get_start() < start_vpn {
+                    let left_end = start_vpn;
+                    let mut left_area = MapArea {
+                        vpn_range: VPNRange::new(area.vpn_range.get_start(), left_end),
+                        data_frames: BTreeMap::new(),
+                        map_type: area.map_type,
+                        map_perm: area.map_perm,
+                    };
+                    // 将还在范围内的数据帧挪过去
+                    let vpn_to_move: Vec<_> = area
+                        .data_frames
+                        .keys()
+                        .filter(|&&vpn| vpn < left_end)
+                        .cloned()
+                        .collect();
+                    for vpn in vpn_to_move {
+                        if let Some(frame) = area.data_frames.remove(&vpn) {
+                            left_area.data_frames.insert(vpn, frame);
+                        }
+                    }
+                    self.areas.push(left_area);
+                }
+
+                // 情况 B: 右侧有剩余 [end_vpn, original_end)
+                if area.vpn_range.get_end() > end_vpn {
+                    let right_start = end_vpn;
+                    let mut right_area = MapArea {
+                        vpn_range: VPNRange::new(right_start, area.vpn_range.get_end()),
+                        data_frames: BTreeMap::new(),
+                        map_type: area.map_type,
+                        map_perm: area.map_perm,
+                    };
+                    // 将还在范围内的数据帧挪过去
+                    let vpn_to_move: Vec<_> = area
+                        .data_frames
+                        .keys()
+                        .filter(|&&vpn| vpn >= right_start)
+                        .cloned()
+                        .collect();
+                    for vpn in vpn_to_move {
+                        if let Some(frame) = area.data_frames.remove(&vpn) {
+                            right_area.data_frames.insert(vpn, frame);
+                        }
+                    }
+                    self.areas.push(right_area);
+                }
+            } else {
+                break;
+            }
+        }
+        0
+    }
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
@@ -352,6 +446,11 @@ impl MapArea {
             current_vpn.step();
         }
     }
+    pub fn is_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        !(end_vpn <= self.vpn_range.get_start() || start_vpn >= self.vpn_range.get_end())
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -362,6 +461,7 @@ pub enum MapType {
 }
 bitflags::bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
+    #[derive(Clone, Copy)]
     pub struct MapPermission: u8 {
         const R = 1 << 1;
         const W = 1 << 2;

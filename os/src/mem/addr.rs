@@ -115,7 +115,7 @@ impl StepByOne for VirtPageNum {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 /// 一个简单的区间结构，包含一个左闭右开区间 [l, r)
 /// 要求 T 可以自增 1，且可以比较大小
 pub struct SimpleRange<T>

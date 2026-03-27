@@ -113,6 +113,18 @@ impl TaskManager {
         inner.tasks[cur].change_program_brk(size)
     }
 
+    pub fn mmap_current(&self, start: usize, end: usize, prot: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].mmap(start, end, prot)
+    }
+
+    pub fn munmap_current(&self, start: usize, end: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].munmap(start, end)
+    }
+
     /// 切换到下一个任务，如果没有 `Ready` 的任务了，就关机
     fn run_next_task(&self) {
         if let Some(next) = self.find_next_task() {
@@ -181,4 +193,12 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+pub fn mmap_current(start: usize, end: usize, prot: usize) -> isize {
+    TASK_MANAGER.mmap_current(start, end, prot)
+}
+
+pub fn munmap_current(start: usize, end: usize) -> isize {
+    TASK_MANAGER.munmap_current(start, end)
 }

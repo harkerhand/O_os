@@ -5,6 +5,8 @@ const SYSCALL_EXIT: usize = 93;
 const SYSCALL_YIELD: usize = 124;
 const SYSCALL_GET_TIME: usize = 169;
 const SYSCALL_SBRK: usize = 214;
+const SYSCALL_MMAP: usize = 222;
+const SYSCALL_MUNMAP: usize = 215;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -38,4 +40,12 @@ pub fn sys_get_time() -> isize {
 
 pub fn sys_sbrk(size: i32) -> isize {
     syscall(SYSCALL_SBRK, [size as usize, 0, 0])
+}
+
+pub fn sys_mmap(addr: usize, length: usize, prot: usize) -> isize {
+    syscall(SYSCALL_MMAP, [addr, length, prot])
+}
+
+pub fn sys_munmap(addr: usize, length: usize) -> isize {
+    syscall(SYSCALL_MUNMAP, [addr, length, 0])
 }

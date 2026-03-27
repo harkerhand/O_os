@@ -14,11 +14,11 @@ impl Log for SimpleLogger {
             return;
         }
         let color = match record.level() {
-            Level::Error => 31, // Red
-            Level::Warn => 93,  // BrightYellow
-            Level::Info => 34,  // Blue
-            Level::Debug => 32, // Green
-            Level::Trace => 90, // BrightBlack
+            Level::Error => 31, // Red (致命错误)
+            Level::Warn => 33,  // Yellow (标准警告，比 BrightYellow 更柔和)
+            Level::Info => 32,  // Green (用户操作成功的暗示)
+            Level::Debug => 36, // Cyan (青色，方便在大量文字中一眼扫到)
+            Level::Trace => 90, // BrightBlack/Gray (不重要的流水账)
         };
         println!(
             "\u{1B}[{}m[USER][{}] {}\u{1B}[0m",

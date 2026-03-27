@@ -39,3 +39,11 @@ pub fn get_time() -> isize {
 pub fn sbrk(size: i32) -> isize {
     sys_sbrk(size)
 }
+
+pub fn mmap(addr: usize, length: usize, prot: usize) -> isize {
+    sys_mmap(addr, length, prot)
+}
+
+pub fn munmap(addr: usize, length: usize) -> isize {
+    sys_munmap(addr, length)
+}
