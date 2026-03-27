@@ -73,13 +73,13 @@ pub fn trap_handler() -> ! {
                 | Ok(Exception::LoadFault)
                 | Ok(Exception::LoadPageFault) => {
                     error!(
-                        "[kernel] 应用页错误，内核杀死了它。错误地址 = {:#x}，错误指令 = {:#x}",
+                        "应用页错误，内核杀死了它。错误地址 = {:#x}，错误指令 = {:#x}",
                         stval, cx.sepc
                     );
                     exit_current_and_run_next();
                 }
                 Ok(Exception::IllegalInstruction) => {
-                    error!("[kernel] 应用执行了非法指令，内核杀死了它。");
+                    error!("应用执行了非法指令，内核杀死了它。");
                     exit_current_and_run_next();
                 }
                 _ => {
@@ -90,7 +90,7 @@ pub fn trap_handler() -> ! {
         Trap::Interrupt(code) => {
             match Interrupt::from_number(code) {
                 Ok(Interrupt::SupervisorTimer) => {
-                    debug!("[kernel] 时间中断");
+                    debug!("时间中断");
                     // 重新设置下一次 timer interrupt
                     set_next_trigger();
                     // 切换到下一个任务

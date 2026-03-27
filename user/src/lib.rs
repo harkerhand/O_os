@@ -4,11 +4,13 @@
 #[macro_use]
 pub mod console;
 mod lang_items;
+mod logging;
 mod syscall;
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
 pub extern "C" fn _start() -> ! {
+    logging::init();
     exit(main());
     panic!("unreachable after sys_exit!");
 }

@@ -189,10 +189,6 @@ impl MemorySet {
             }
         }
         // 映射用户栈，位于用户空间顶部TrapContext下，向下生长
-        info!(
-            "mapping user stack [{:#x}, {:#x})",
-            USER_STACK_BOTTOM, USER_STACK_TOP
-        );
         memory_set.push(
             MapArea::new(
                 VirtAddr(USER_STACK_BOTTOM),
@@ -205,7 +201,6 @@ impl MemorySet {
 
         let max_end_va: VirtAddr = max_end_vpn.into();
         // 映射堆，位于用户空间底部的elf段之后，向上生长
-        info!("mapping heap [{:#x}, {:#x})", max_end_va.0, max_end_va.0);
         memory_set.push(
             MapArea::new(
                 max_end_va,

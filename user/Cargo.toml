@@ -6,6 +6,7 @@ edition = "2024"
 
 
 [dependencies]
+log = "0.4.29"
 riscv = "0.16.0"
 
 [profile.release]

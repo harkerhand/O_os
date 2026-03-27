@@ -1,7 +1,8 @@
 #![no_std]
 #![no_main]
 
-#[macro_use]
+use log::info;
+
 extern crate user_lib;
 
 const LEN: usize = 100;
@@ -19,10 +20,9 @@ fn main() -> i32 {
         s[next] = s[cur] * p % m;
         cur = next;
         if i % 1000000 == 0 {
-            println!("power_3 [{}/{}]", i, iter);
+            info!("power_3 [{}/{}]", i, iter);
         }
     }
-    println!("{}^{} = {}(MOD {})", p, iter, s[cur], m);
-    println!("Test power_3 OK!");
+    info!("Test power_3 OK!");
     0
 }

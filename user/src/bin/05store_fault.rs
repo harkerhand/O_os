@@ -1,16 +1,15 @@
 #![no_std]
 #![no_main]
 
-#[macro_use]
 extern crate user_lib;
 
 use core::ptr::null_mut;
 
+use log::info;
+
 #[unsafe(no_mangle)]
 fn main() -> i32 {
-    println!("\nstore_fault APP running...\n");
-    println!("Into Test store_fault, we will insert an invalid store operation...");
-    println!("Kernel should kill this application!");
+    info!("写入一个空指针，触发页错误...");
     unsafe {
         null_mut::<u8>().write_volatile(1);
     }

@@ -56,7 +56,7 @@ lazy_static! {
 impl TaskManager {
     /// 运行第一个任务
     fn run_first_task(&self) -> ! {
-        trace!("[kernel] 运行第一个任务");
+        trace!("运行第一个任务");
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
@@ -73,7 +73,7 @@ impl TaskManager {
     fn mark_current_suspended(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        trace!("[kernel] 挂起当前任务: {}", current);
+        trace!("挂起当前任务: {}", current);
         inner.tasks[current].task_status = TaskStatus::Ready;
     }
 
@@ -81,7 +81,7 @@ impl TaskManager {
     fn mark_current_exited(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        trace!("[kernel] 标记当前任务为已退出: {}", current);
+        trace!("标记当前任务为已退出: {}", current);
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
 
@@ -118,7 +118,7 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
-            trace!("[kernel] 切换任务: {} -> {}", current, next);
+            trace!("切换任务: {} -> {}", current, next);
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
@@ -130,7 +130,7 @@ impl TaskManager {
             }
             // 返回用户态
         } else {
-            info!("[kernel] 所有应用已完成，准备关机");
+            info!("所有应用已完成，准备关机");
             crate::sbi::shutdown();
         }
     }
