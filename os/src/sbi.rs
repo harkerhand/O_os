@@ -91,17 +91,10 @@ pub fn console_putstr(s: &str) {
     }
 }
 
-pub fn console_getchar() -> usize {
-    let mut input = 0u8;
-    let addr = &mut input as *mut u8 as usize;
-
-    if addr <= MEMORY_END {
-        let ret = sbi_call(SBI_CONSOLE_DBCN, 1, 1, addr, 0);
-        if ret.error == 0 && ret.value > 0 {
-            input as usize
-        } else {
-            0
-        }
+pub fn console_getchar(buf: *mut u8, len: usize) -> isize {
+    let addr = buf as usize;
+    let ret = if addr <= MEMORY_END {
+        sbi_call(SBI_CONSOLE_DBCN, 1, len, addr, 0)
     } else {
         let va = VirtAddr(addr);
         let vpn = va.floor();
@@ -111,12 +104,12 @@ pub fn console_getchar() -> usize {
             .translate(vpn)
             .expect("console_getchar: kernel va not mapped");
         let pa = (pte.ppn().0 << PAGE_SIZE_BITS) + offset;
-        let ret = sbi_call(SBI_CONSOLE_DBCN, 1, 1, pa, 0);
-        if ret.error == 0 && ret.value > 0 {
-            input as usize
-        } else {
-            0
-        }
+        sbi_call(SBI_CONSOLE_DBCN, 1, len, pa, 0)
+    };
+    if ret.error == 0 {
+        ret.value as isize
+    } else {
+        -1
     }
 }
 

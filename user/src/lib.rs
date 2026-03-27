@@ -32,10 +32,10 @@ fn main() -> i32 {
 use log::error;
 use syscall::*;
 
-pub fn getchar() -> u8 {
-    let mut buf = [0u8; 1];
-    sys_read(0, &mut buf);
-    buf[0]
+pub use console::getchar;
+
+pub fn read(fs: usize, buf: &mut [u8]) -> isize {
+    sys_read(fs, buf)
 }
 
 pub fn write(fd: usize, buf: &[u8]) -> isize {
