@@ -7,6 +7,7 @@ pub mod console;
 mod heap_alloc;
 mod lang_items;
 mod logging;
+mod sync;
 mod syscall;
 
 #[alloc_error_handler]
