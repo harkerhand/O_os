@@ -6,7 +6,9 @@ use lazy_static::*;
 use log::info;
 use riscv::register::satp::{self, Satp};
 
-use crate::config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
+use crate::config::{
+    MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_BOTTOM, USER_STACK_TOP,
+};
 use crate::mem::addr::{PhysAddr, PhysPageNum, StepByOne, VPNRange, VirtAddr, VirtPageNum};
 use crate::mem::frame_allocator::{FrameTracker, frame_alloc};
 use crate::mem::page_table::{PTEFlags, PageTable, PageTableEntry};
@@ -146,28 +148,16 @@ impl MemorySet {
             ),
             None,
         );
-        info!("mapping memory-mapped registers");
-        for pair in MMIO {
-            memory_set.push(
-                MapArea::new(
-                    VirtAddr(pair.0),
-                    VirtAddr(pair.0 + pair.1),
-                    MapType::Identical,
-                    MapPermission::R | MapPermission::W,
-                ),
-                None,
-            );
-        }
         memory_set
     }
 
     /// 包括 elf 中的各个段、trampoline、TrapContext 和用户栈
-    /// 并返回用户栈顶和入口点
+    /// 并返回用户堆底和入口点
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
-        // map trampoline
+        // 映射跳板
         memory_set.map_trampoline();
-        // map program headers of elf, with U flag
+        // 解析 elf，映射各个 loadable segment，权限根据段类型设置
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
         let magic = elf_header.pt1.magic;
@@ -198,32 +188,34 @@ impl MemorySet {
                 );
             }
         }
-        // map user stack with U flags
+        // 映射用户栈，位于用户空间顶部TrapContext下，向下生长
+        info!(
+            "mapping user stack [{:#x}, {:#x})",
+            USER_STACK_BOTTOM, USER_STACK_TOP
+        );
+        memory_set.push(
+            MapArea::new(
+                VirtAddr(USER_STACK_BOTTOM),
+                VirtAddr(USER_STACK_TOP),
+                MapType::Framed,
+                MapPermission::R | MapPermission::W | MapPermission::U,
+            ),
+            None,
+        );
+
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_stack_bottom: usize = max_end_va.0;
-        // guard page
-        user_stack_bottom += PAGE_SIZE;
-        let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
+        // 映射堆，位于用户空间底部的elf段之后，向上生长
+        info!("mapping heap [{:#x}, {:#x})", max_end_va.0, max_end_va.0);
         memory_set.push(
             MapArea::new(
-                VirtAddr(user_stack_bottom),
-                VirtAddr(user_stack_top),
+                max_end_va,
+                max_end_va,
                 MapType::Framed,
                 MapPermission::R | MapPermission::W | MapPermission::U,
             ),
             None,
         );
-        // used in sbrk
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(user_stack_top),
-                VirtAddr(user_stack_top),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
-        // map TrapContext
+        // 映射 TrapContext，位于用户空间顶部跳板下，用户栈上，权限为 R/W
         memory_set.push(
             MapArea::new(
                 VirtAddr(TRAP_CONTEXT),
@@ -235,7 +227,7 @@ impl MemorySet {
         );
         (
             memory_set,
-            user_stack_top,
+            max_end_va.0,
             elf.header.pt2.entry_point() as usize,
         )
     }
@@ -314,7 +306,6 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
-    #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
             self.data_frames.remove(&vpn);

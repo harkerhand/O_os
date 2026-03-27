@@ -10,15 +10,15 @@ use user_lib::sbrk;
 #[unsafe(no_mangle)]
 fn main() -> i32 {
     println!("Test sbrk start.");
-    const PAGE_SIZE: usize = 0x1000;
+    const PAGE_SIZE: usize = 4096;
     let origin_brk = sbrk(0);
-    println!("origin break point = {:x}", origin_brk);
+    println!("origin break point = {:#x}", origin_brk);
     let brk = sbrk(PAGE_SIZE as i32);
     if brk != origin_brk {
         return -1;
     }
     let brk = sbrk(0);
-    println!("one page allocated,  break point = {:x}", brk);
+    println!("one page allocated,  break point = {:#x}", brk);
     println!("try write to allocated page");
     let new_page = unsafe {
         &mut *slice_from_raw_parts_mut(origin_brk as usize as *const u8 as *mut u8, PAGE_SIZE)
@@ -29,10 +29,10 @@ fn main() -> i32 {
     println!("write ok");
     sbrk(PAGE_SIZE as i32 * 10);
     let brk = sbrk(0);
-    println!("10 page allocated,  break point = {:x}", brk);
+    println!("10 page allocated,  break point = {:#x}", brk);
     sbrk(PAGE_SIZE as i32 * -11);
     let brk = sbrk(0);
-    println!("11 page DEALLOCATED,  break point = {:x}", brk);
+    println!("11 page DEALLOCATED,  break point = {:#x}", brk);
     println!("try DEALLOCATED more one page, should be failed.");
     let ret = sbrk(PAGE_SIZE as i32 * -1);
     if ret != -1 {
