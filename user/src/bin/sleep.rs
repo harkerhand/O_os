@@ -13,6 +13,7 @@ fn main(argc: usize, argv: &[&str]) -> i32 {
     } else {
         500
     };
+    info!("Sleeping for {} ms...", wait_time);
     let current_timer = get_time();
     let wait_for = current_timer + wait_time;
     while get_time() < wait_for {

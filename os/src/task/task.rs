@@ -156,27 +156,29 @@ impl ProcessControlBlock {
             .unwrap()
             .ppn();
         let mut user_sp = USER_STACK_TOP;
-        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        user_sp -= core::mem::size_of::<usize>();
+        let ptr = translated_refmut(memory_set.token(), user_sp as *mut usize);
+        *ptr = 0; // argv[argc] = NULL
+        user_sp -= args.len() * core::mem::size_of::<usize>();
         let argv_base = user_sp;
-        let mut argv = Vec::new();
-        for i in 0..=args.len() {
-            let ptr = translated_refmut(
-                memory_set.token(),
-                (argv_base + i * core::mem::size_of::<usize>()) as *mut usize,
-            );
-            argv.push(ptr);
-        }
-        *argv[args.len()] = 0;
-        for i in 0..args.len() {
-            user_sp -= args[i].len() + 1;
-            *argv[i] = user_sp;
+
+        for (i, arg) in args.iter().enumerate() {
+            // 将参数字符串写入用户栈
+            user_sp -= arg.len() + 1;
             let mut p = user_sp;
-            for c in args[i].as_bytes() {
+            for c in arg.as_bytes() {
                 *translated_refmut(memory_set.token(), p as *mut u8) = *c;
                 p += 1;
             }
             *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+            // 将参数指针写入 argv[i]
+            let ptr = translated_refmut(
+                memory_set.token(),
+                (argv_base + i * core::mem::size_of::<usize>()) as *mut usize,
+            );
+            *ptr = user_sp;
         }
+
         user_sp -= user_sp % core::mem::size_of::<usize>();
 
         let mut inner = self.inner.exclusive_access();
