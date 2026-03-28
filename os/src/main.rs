@@ -27,7 +27,6 @@ mod timer;
 mod trap;
 
 core::arch::global_asm!(include_str!("entry.asm"));
-core::arch::global_asm!(include_str!("link_app.S"));
 
 /// 清空 BSS 段
 pub fn clear_bss() {

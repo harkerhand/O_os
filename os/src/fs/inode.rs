@@ -1,6 +1,6 @@
 //! Inode
 use crate::drivers::block::BLOCK_DEVICE;
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use easy_fs::{EasyFileSystem, Inode};
 
 use crate::{fs::File, sync::SyncRefCell};
@@ -100,6 +100,7 @@ bitflags::bitflags! {
         const RDWR = 1 << 1;
         const CREATE = 1 << 9;
         const TRUNC = 1 << 10;
+        const DIRECTORY = 1 << 11;
     }
 }
 
@@ -115,23 +116,86 @@ impl OpenFlags {
     }
 }
 
+fn path_components(path: &str) -> Vec<&str> {
+    path.split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect()
+}
+
+fn resolve_path(path: &str) -> Option<Arc<Inode>> {
+    let parts = path_components(path);
+    if parts.is_empty() {
+        return Some(ROOT_INODE.clone());
+    }
+    let mut current = ROOT_INODE.clone();
+    for part in parts {
+        let next = current.find(part)?;
+        current = next;
+    }
+    Some(current)
+}
+
+fn resolve_parent_dir(path: &str, create_intermediate: bool) -> Option<(Arc<Inode>, String)> {
+    let mut parts = path_components(path);
+    if parts.is_empty() {
+        return None;
+    }
+    let file_name = String::from(parts.pop().unwrap());
+    let mut current = ROOT_INODE.clone();
+    for part in parts {
+        if let Some(next) = current.find(part) {
+            if !next.is_dir() {
+                return None;
+            }
+            current = next;
+        } else if create_intermediate {
+            current = current.create_dir(part)?;
+        } else {
+            return None;
+        }
+    }
+    Some((current, file_name))
+}
+
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
     if flags.contains(OpenFlags::CREATE) {
-        if let Some(inode) = ROOT_INODE.find(name) {
-            inode.clear();
-            Some(Arc::new(OSInode::new(readable, writable, inode)))
-        } else {
-            ROOT_INODE
-                .create(name)
-                .map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
+        let (parent_dir, base_name) = resolve_parent_dir(name, true)?;
+        if base_name.is_empty() {
+            return None;
         }
-    } else {
-        ROOT_INODE.find(name).map(|inode| {
-            if flags.contains(OpenFlags::TRUNC) {
+        let want_dir = flags.contains(OpenFlags::DIRECTORY);
+        if let Some(inode) = parent_dir.find(base_name.as_str()) {
+            if want_dir && !inode.is_dir() {
+                return None;
+            }
+            if !want_dir && inode.is_dir() {
+                return None;
+            }
+            if !want_dir {
                 inode.clear();
             }
-            Arc::new(OSInode::new(readable, writable, inode))
+            Some(Arc::new(OSInode::new(readable, writable, inode)))
+        } else {
+            let inode = if want_dir {
+                parent_dir.create_dir(base_name.as_str())
+            } else {
+                parent_dir.create(base_name.as_str())
+            };
+            inode.map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
+        }
+    } else {
+        resolve_path(name).and_then(|inode| {
+            if flags.contains(OpenFlags::DIRECTORY) && !inode.is_dir() {
+                return None;
+            }
+            if !flags.contains(OpenFlags::DIRECTORY) && inode.is_dir() {
+                return None;
+            }
+            if flags.contains(OpenFlags::TRUNC) && inode.is_file() {
+                inode.clear();
+            }
+            Some(Arc::new(OSInode::new(readable, writable, inode)))
         })
     }
 }

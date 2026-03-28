@@ -57,6 +57,16 @@ impl Inode {
         }
         None
     }
+    /// 判断当前 inode 是否是目录
+    pub fn is_dir(&self) -> bool {
+        let _fs = self.fs.lock();
+        self.read_disk_inode(|disk_inode| disk_inode.is_dir())
+    }
+    /// 判断当前 inode 是否是普通文件
+    pub fn is_file(&self) -> bool {
+        let _fs = self.fs.lock();
+        self.read_disk_inode(|disk_inode| disk_inode.is_file())
+    }
     /// 找到当前 Inode 下名字为 name 的 Inode
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
         let fs = self.fs.lock();
@@ -72,25 +82,8 @@ impl Inode {
             })
         })
     }
-    /// 增大 Inode 的大小到 new_size，分配新的数据块并写入磁盘
-    fn increase_size(
-        &self,
-        new_size: u32,
-        disk_inode: &mut DiskInode,
-        fs: &mut MutexGuard<EasyFileSystem>,
-    ) {
-        if new_size < disk_inode.size {
-            return;
-        }
-        let blocks_needed = disk_inode.blocks_num_needed(new_size);
-        let mut v: Vec<u32> = Vec::new();
-        for _ in 0..blocks_needed {
-            v.push(fs.alloc_data());
-        }
-        disk_inode.increase_size(new_size, v, &self.block_device);
-    }
-    /// 在当前 Inode 下创建一个名字为 name 的文件，返回新文件的 Inode 对象
-    pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
+    /// 在当前目录下创建指定类型的 inode
+    fn create_inode(&self, name: &str, type_: DiskInodeType) -> Option<Arc<Inode>> {
         let mut fs = self.fs.lock();
         let op = |root_inode: &DiskInode| {
             assert!(root_inode.is_dir());
@@ -104,7 +97,7 @@ impl Inode {
         get_block_cache(new_inode_block_id as usize, Arc::clone(&self.block_device))
             .lock()
             .modify(new_inode_block_offset, |new_inode: &mut DiskInode| {
-                new_inode.initialize(DiskInodeType::File);
+                new_inode.initialize(type_);
             });
         self.modify_disk_inode(|root_inode| {
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
@@ -126,6 +119,31 @@ impl Inode {
             self.fs.clone(),
             self.block_device.clone(),
         )))
+    }
+    /// 增大 Inode 的大小到 new_size，分配新的数据块并写入磁盘
+    fn increase_size(
+        &self,
+        new_size: u32,
+        disk_inode: &mut DiskInode,
+        fs: &mut MutexGuard<EasyFileSystem>,
+    ) {
+        if new_size < disk_inode.size {
+            return;
+        }
+        let blocks_needed = disk_inode.blocks_num_needed(new_size);
+        let mut v: Vec<u32> = Vec::new();
+        for _ in 0..blocks_needed {
+            v.push(fs.alloc_data());
+        }
+        disk_inode.increase_size(new_size, v, &self.block_device);
+    }
+    /// 在当前 Inode 下创建一个名字为 name 的文件，返回新文件的 Inode 对象
+    pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
+        self.create_inode(name, DiskInodeType::File)
+    }
+    /// 在当前 Inode 下创建一个名字为 name 的目录，返回新目录的 Inode 对象
+    pub fn create_dir(&self, name: &str) -> Option<Arc<Inode>> {
+        self.create_inode(name, DiskInodeType::Directory)
     }
     /// 列出当前 Inode 下的所有文件和目录的名字
     pub fn ls(&self) -> Vec<String> {
