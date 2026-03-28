@@ -2,6 +2,8 @@ use alloc::vec::Vec;
 use alloc::{string::String, vec};
 use bitflags::bitflags;
 
+use crate::config::PAGE_SIZE_BITS;
+use crate::mem::KERNEL_SPACE;
 use crate::mem::addr::PhysAddr;
 use crate::mem::{
     VirtAddr,
@@ -188,6 +190,22 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     v
 }
 
+pub struct UserBuffer {
+    pub buf: Vec<&'static mut [u8]>,
+}
+
+impl UserBuffer {
+    pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
+        Self { buf: buffers }
+    }
+    pub fn from_raw_parts(token: usize, ptr: *const u8, len: usize) -> Self {
+        Self::new(translated_byte_buffer(token, ptr, len))
+    }
+    pub fn len(&self) -> usize {
+        self.buf.iter().map(|b| b.len()).sum()
+    }
+}
+
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();
@@ -208,4 +226,15 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
     page_table.translate_va(VirtAddr(va)).unwrap().get_mut()
+}
+
+pub fn kernel_va_to_pa(va: usize) -> usize {
+    let va = VirtAddr(va);
+    let vpn = va.floor();
+    let offset = va.page_offset();
+    let pte = KERNEL_SPACE
+        .exclusive_access()
+        .translate(vpn)
+        .expect("console_putstr: kernel va not mapped");
+    (pte.ppn().0 << PAGE_SIZE_BITS) + offset
 }

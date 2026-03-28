@@ -6,12 +6,13 @@ edition = "2024"
 
 
 [dependencies]
+easy-fs = { path = "../easy-fs" }
 log = "0.4"
 lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 riscv = { version = "0.16.0" }
 bitflags = "2.11.0"
 xmas-elf = "0.10.0"
 buddy_system_allocator = "0.12.0"
-
+virtio-drivers = "0.13.0"
 [profile.release]
 debug = true

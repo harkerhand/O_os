@@ -4,6 +4,7 @@ MODE := release
 KERNEL_ELF := ./target/$(TARGET)/$(MODE)/O_os
 KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
+FS_IMG := ../user/target/$(TARGET)/$(MODE)/fs.img
 
 # Building mode argument
 ifeq ($(MODE), release)
@@ -26,7 +27,12 @@ DISASM ?= -x
 bin: kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $(KERNEL_BIN)
 
-build: kernel
+build: kernel fs-img
+
+fs-img: $(APPS)
+	@cd ../user && make build 
+	@rm -f $(FS_IMG)
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
 
 kernel:
 	@cd ../user && make build
@@ -49,7 +55,9 @@ run: build
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
-		-kernel $(KERNEL_ELF)
+		-kernel $(KERNEL_ELF) \
+		-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 debug: build
 	@zellij --layout debug.kdl

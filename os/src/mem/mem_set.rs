@@ -170,6 +170,18 @@ impl MemorySet {
             ),
             None,
         );
+        debug!("mapping MMIO");
+        for pair in crate::config::MMIO {
+            memory_set.push(
+                MapArea::new(
+                    VirtAddr(pair.0),
+                    VirtAddr(pair.0 + pair.1),
+                    MapType::Identical,
+                    MapPermission::R | MapPermission::W,
+                ),
+                None,
+            );
+        }
         memory_set
     }
 

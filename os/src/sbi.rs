@@ -1,8 +1,8 @@
 //! SBI call wrappers
 
 use crate::{
-    config::{MEMORY_END, PAGE_SIZE, PAGE_SIZE_BITS},
-    mem::{KERNEL_SPACE, VirtAddr},
+    config::{MEMORY_END, PAGE_SIZE},
+    mem::{VirtAddr, kernel_va_to_pa},
 };
 const SBI_CONSOLE_DBCN: usize = 0x4442434E; // "DBCN" in ASCII
 
@@ -96,14 +96,7 @@ pub fn console_getchar(buf: *mut u8, len: usize) -> isize {
     let ret = if addr <= MEMORY_END {
         sbi_call(SBI_CONSOLE_DBCN, 1, len, addr, 0)
     } else {
-        let va = VirtAddr(addr);
-        let vpn = va.floor();
-        let offset = va.page_offset();
-        let pte = KERNEL_SPACE
-            .exclusive_access()
-            .translate(vpn)
-            .expect("console_getchar: kernel va not mapped");
-        let pa = (pte.ppn().0 << PAGE_SIZE_BITS) + offset;
+        let pa = kernel_va_to_pa(addr);
         sbi_call(SBI_CONSOLE_DBCN, 1, len, pa, 0)
     };
     if ret.error == 0 {
@@ -111,17 +104,6 @@ pub fn console_getchar(buf: *mut u8, len: usize) -> isize {
     } else {
         -1
     }
-}
-
-fn kernel_va_to_pa(va: usize) -> usize {
-    let va = VirtAddr(va);
-    let vpn = va.floor();
-    let offset = va.page_offset();
-    let pte = KERNEL_SPACE
-        .exclusive_access()
-        .translate(vpn)
-        .expect("console_putstr: kernel va not mapped");
-    (pte.ppn().0 << PAGE_SIZE_BITS) + offset
 }
 
 const SBI_EXT_SRST: usize = 0x53525354;

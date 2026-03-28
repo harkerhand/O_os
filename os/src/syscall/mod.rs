@@ -6,6 +6,8 @@
 //! 命名为 `sys_` 加上系统调用的名称。
 //! 你可以在子模块中找到这样的函数，你也应该以这种方式实现系统调用。
 
+const SYSCALL_OPENAT: usize = 56;
+const SYSCALL_CLOSE: usize = 57;
 const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
@@ -31,6 +33,8 @@ use process::*;
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
     trace!("syscall: id={}, args={:?}", syscall_id, args);
     match syscall_id {
+        SYSCALL_OPENAT => sys_open(args[0] as *const u8, args[1] as u32),
+        SYSCALL_CLOSE => sys_close(args[0]),
         SYSCALL_READ => sys_read(args[0], args[1] as *mut u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),

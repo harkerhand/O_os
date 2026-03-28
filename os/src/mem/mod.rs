@@ -5,10 +5,11 @@ mod page_table;
 
 pub use crate::mem::mem_set::MapPermission;
 pub use addr::{PhysPageNum, VirtAddr};
+pub use frame_allocator::{FrameTracker, frame_alloc};
 use log::info;
 pub use mem_set::KERNEL_SPACE;
 pub use mem_set::MemorySet;
-pub use page_table::{translated_byte_buffer, translated_refmut, translated_str};
+pub use page_table::{UserBuffer, kernel_va_to_pa, translated_refmut, translated_str};
 mod heap_allocator;
 
 pub fn init() {

@@ -4,12 +4,14 @@ use core::cell::RefMut;
 
 use alloc::{
     sync::{Arc, Weak},
+    vec,
     vec::Vec,
 };
 
 use crate::{
     config::{TRAP_CONTEXT, USER_STACK_TOP},
     error::{KernelError, KernelResult},
+    fs::File,
     mem::{KERNEL_SPACE, MemorySet, PhysPageNum, VirtAddr},
     sync::SyncRefCell,
     task::pid::{self, KernelStack, Pid},
@@ -28,6 +30,7 @@ pub struct TaskControlBlock {
     pub parent: Option<Weak<ProcessControlBlock>>,
     pub children: Vec<Arc<ProcessControlBlock>>,
     pub exit_code: i32,
+    pub fd_table: Vec<Option<Arc<dyn File>>>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -78,6 +81,15 @@ impl TaskControlBlock {
     pub fn munmap(&mut self, start: usize, end: usize) -> isize {
         self.memory_set.munmap(start, end)
     }
+    pub fn alloc_fd(&mut self) -> usize {
+        if let Some(pos) = self.fd_table.iter().position(|fd| fd.is_none()) {
+            pos
+        } else {
+            let pos = self.fd_table.len();
+            self.fd_table.push(None);
+            pos
+        }
+    }
 }
 
 /// ProcessControlBlock
@@ -111,6 +123,11 @@ impl ProcessControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
+                    fd_table: vec![
+                        Some(Arc::new(crate::fs::stdio::Stdin)),
+                        Some(Arc::new(crate::fs::stdio::Stdout)),
+                        Some(Arc::new(crate::fs::stdio::Stderr)),
+                    ],
                 })
             },
         };
@@ -175,6 +192,7 @@ impl ProcessControlBlock {
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,
+                    fd_table: parent_inner.fd_table.clone(),
                 })
             },
         });

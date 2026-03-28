@@ -3,13 +3,10 @@
 version = 4
 
 [[package]]
-name = "buddy_system_allocator"
-version = "0.12.0"
+name = "bitflags"
+version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b672b945a3e4f4f40bfd4cd5ee07df9e796a42254ce7cd6d2599ad969244c44a"
-dependencies = [
- "spin",
-]
+checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
 name = "critical-section"
@@ -84,12 +81,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3f2ad9f15a07f4a0e1677124f9120ce7e83ab7e1ca7186af0ca9da529b62e80"
 
 [[package]]
-name = "spin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
-
-[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -110,7 +101,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 name = "user_lib"
 version = "0.1.0"
 dependencies = [
- "buddy_system_allocator",
+ "bitflags",
  "log",
  "riscv",
 ]

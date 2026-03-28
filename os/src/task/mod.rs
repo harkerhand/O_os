@@ -7,7 +7,7 @@ mod pid;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::fs::inode::{OpenFlags, open_file};
 use crate::task::proc::{schedule, take_current_task};
 use crate::task::task::ProcessControlBlock;
 use alloc::sync::Arc;
@@ -58,7 +58,11 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 lazy_static::lazy_static! {
-    pub static ref INITPROCESS: Arc<ProcessControlBlock> = Arc::new(ProcessControlBlock::new(get_app_data_by_name("initproc").unwrap()));
+    pub static ref INITPROCESS: Arc<ProcessControlBlock> = Arc::new({
+        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
+        let v = inode.read_all();
+        ProcessControlBlock::new(&v)
+    });
 }
 
 pub fn add_initproc() {

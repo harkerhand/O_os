@@ -29,3 +29,6 @@ pub const KERNEL_HEAP_SIZE: usize = 0x1000000;
 
 /// 内核栈的大小，每个应用程序占用 16页，即 64KB
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 16;
+
+/// MMIO 设备的地址和大小
+pub const MMIO: &[(usize, usize)] = &[(0x10001000, 0x1000)];
