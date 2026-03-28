@@ -9,7 +9,7 @@ use user_lib::{exec, fork, wait, yield_};
 #[unsafe(no_mangle)]
 fn main() -> i32 {
     if fork() == 0 {
-        exec("user_shell\0");
+        exec("user_shell\0", &[c"user_shell".as_ptr(), core::ptr::null()]);
     } else {
         loop {
             let mut exit_code: i32 = 0;

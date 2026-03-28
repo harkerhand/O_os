@@ -3,6 +3,7 @@
 use core::cell::RefMut;
 
 use alloc::{
+    string::String,
     sync::{Arc, Weak},
     vec,
     vec::Vec,
@@ -12,7 +13,7 @@ use crate::{
     config::{TRAP_CONTEXT, USER_STACK_TOP},
     error::{KernelError, KernelResult},
     fs::File,
-    mem::{KERNEL_SPACE, MemorySet, PhysPageNum, VirtAddr},
+    mem::{KERNEL_SPACE, MemorySet, PhysPageNum, VirtAddr, translated_refmut},
     sync::SyncRefCell,
     task::pid::{self, KernelStack, Pid},
     trap::{TrapContext, trap_handler},
@@ -148,25 +149,51 @@ impl ProcessControlBlock {
     pub fn get_pid(&self) -> usize {
         self.pid.0
     }
-    pub fn exec(&self, elf_data: &[u8]) {
+    pub fn exec(&self, elf_data: &[u8], args: Vec<String>) {
         let (memory_set, heap_bottom, entry_point) = MemorySet::from_elf(elf_data);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
+        let mut user_sp = USER_STACK_TOP;
+        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        let argv_base = user_sp;
+        let mut argv = Vec::new();
+        for i in 0..=args.len() {
+            let ptr = translated_refmut(
+                memory_set.token(),
+                (argv_base + i * core::mem::size_of::<usize>()) as *mut usize,
+            );
+            argv.push(ptr);
+        }
+        *argv[args.len()] = 0;
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            for c in args[i].as_bytes() {
+                *translated_refmut(memory_set.token(), p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+        }
+        user_sp -= user_sp % core::mem::size_of::<usize>();
+
         let mut inner = self.inner.exclusive_access();
         inner.memory_set = memory_set;
         inner.trap_cx_ppn = trap_cx_ppn;
         inner.heap_bottom = heap_bottom;
         inner.program_brk = heap_bottom;
-        let trap_cx = inner.get_trap_cx();
-        *trap_cx = TrapContext::app_init_context(
+        let mut trap_cx = TrapContext::app_init_context(
             entry_point,
-            USER_STACK_TOP,
+            user_sp,
             KERNEL_SPACE.exclusive_access().token(),
             self.kernel_stack.get_top(),
             trap_handler as *const () as usize,
         );
+        trap_cx.x[10] = args.len();
+        trap_cx.x[11] = argv_base;
+        *inner.get_trap_cx() = trap_cx;
     }
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
         let mut parent_inner = self.inner.exclusive_access();

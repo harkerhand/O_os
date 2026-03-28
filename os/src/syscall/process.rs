@@ -1,9 +1,10 @@
 //! 进程相关的系统调用
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use log::{info, warn};
 
 use crate::fs::inode::{OpenFlags, open_file};
-use crate::mem::{translated_refmut, translated_str};
+use crate::mem::{translated_ref, translated_refmut, translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
     INITPROCESS, add_task, change_program_brk, current_task, current_user_token,
@@ -55,14 +56,30 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 
-pub fn sys_exec(path: *const u8) -> isize {
+pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
+    let mut args_vec = Vec::new();
+    if !args.is_null() {
+        loop {
+            let arg_ptr = *translated_ref(token, args);
+            if arg_ptr == 0 {
+                break;
+            }
+            args_vec.push(translated_str(token, arg_ptr as *const u8));
+            args = unsafe { args.add(1) };
+        }
+    }
+    if args_vec.is_empty() {
+        args_vec.push(path.clone());
+    }
+    info!("exec path: {}, args: {:?}", path, args_vec);
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let all_data = app_inode.read_all();
         let task = current_task().unwrap();
-        task.exec(&all_data);
-        0
+        let argc = args_vec.len();
+        task.exec(&all_data, args_vec);
+        argc as isize
     } else {
         -1
     }

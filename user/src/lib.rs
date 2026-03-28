@@ -10,6 +10,8 @@ mod logging;
 mod sync;
 mod syscall;
 
+extern crate alloc;
+
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
     error!("内存分配失败: {:?}", layout);
@@ -18,18 +20,37 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(argc: usize, argv: usize) -> ! {
     logging::init();
-    exit(main());
+    let mut v = Vec::new();
+    for i in 0..argc {
+        let str_start = unsafe {
+            let argv_ptr = (argv + i * core::mem::size_of::<usize>()) as *const usize;
+            argv_ptr.read_volatile()
+        };
+        let len = (0..)
+            .find(|i| unsafe { ((str_start + i) as *const u8).read_volatile() == 0 })
+            .unwrap();
+        v.push(
+            core::str::from_utf8(unsafe {
+                core::slice::from_raw_parts(str_start as *const u8, len)
+            })
+            .unwrap(),
+        );
+    }
+    debug!("应用入口，argc: {}, argv: {:?}", argc, v);
+
+    exit(main(argc, v.as_slice()));
 }
 
 #[linkage = "weak"]
 #[unsafe(no_mangle)]
-fn main() -> i32 {
+fn main(_argc: usize, _argv: &[&str]) -> i32 {
     panic!("Cannot find main!");
 }
 
-use log::error;
+use alloc::vec::Vec;
+use log::{debug, error};
 use syscall::*;
 
 pub use console::getchar;
@@ -67,8 +88,8 @@ pub fn fork() -> isize {
     sys_fork()
 }
 
-pub fn exec(path: &str) -> isize {
-    sys_exec(path.as_ptr())
+pub fn exec(path: &str, args: &[*const u8]) -> isize {
+    sys_exec(path, args)
 }
 
 pub fn waitpid(pid: isize, status: &mut i32) -> isize {

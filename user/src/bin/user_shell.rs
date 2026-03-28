@@ -12,7 +12,10 @@ const CR: u8 = 0x0du8;
 const DL: u8 = 0x7fu8;
 const BS: u8 = 0x08u8;
 
-use alloc::string::String;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use user_lib::{exec, fork, getchar, waitpid};
 
 #[unsafe(no_mangle)]
@@ -30,11 +33,22 @@ pub fn main() -> i32 {
                     break;
                 }
                 if !line.is_empty() {
-                    line.push('\0');
+                    let args: Vec<_> = line.split_whitespace().collect();
+                    let args_copy: Vec<String> = args
+                        .iter()
+                        .map(|&arg| {
+                            let mut string = arg.to_string();
+                            string.push('\0');
+                            string
+                        })
+                        .collect();
+                    let mut args_addr: Vec<*const u8> =
+                        args_copy.iter().map(|arg| arg.as_ptr()).collect();
+                    args_addr.push(core::ptr::null());
                     let pid = fork();
                     if pid == 0 {
                         // child process
-                        if exec(line.as_str()) == -1 {
+                        if exec(args_copy[0].as_str(), &args_addr) == -1 {
                             println!("Error when executing!");
                             return -4;
                         }
