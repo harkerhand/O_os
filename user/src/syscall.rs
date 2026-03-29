@@ -1,5 +1,6 @@
 use core::arch::asm;
 
+const SYSCALL_UNLINKAT: usize = 35;
 const SYSCALL_OPENAT: usize = 56;
 const SYSCALL_CLOSE: usize = 57;
 
@@ -31,6 +32,10 @@ fn syscall(id: usize, args: [usize; 3]) -> isize {
 
 pub fn sys_openat(path: &str, flags: u32) -> isize {
     syscall(SYSCALL_OPENAT, [path.as_ptr() as usize, flags as usize, 0])
+}
+
+pub fn sys_unlinkat(path: &str) -> isize {
+    syscall(SYSCALL_UNLINKAT, [path.as_ptr() as usize, 0, 0])
 }
 
 pub fn sys_close(fd: usize) -> isize {

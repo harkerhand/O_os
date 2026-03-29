@@ -128,6 +128,10 @@ pub fn open(path: &str, flags: OpenFlags) -> isize {
     sys_openat(path, flags.bits())
 }
 
+pub fn unlink(path: &str) -> isize {
+    sys_unlinkat(path)
+}
+
 pub fn close(fd: usize) -> isize {
     sys_close(fd)
 }

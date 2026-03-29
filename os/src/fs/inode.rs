@@ -199,3 +199,14 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
         })
     }
 }
+
+pub fn unlink_file(name: &str) -> bool {
+    let (parent_dir, base_name) = match resolve_parent_dir(name, false) {
+        Some(v) => v,
+        None => return false,
+    };
+    if base_name.is_empty() {
+        return false;
+    }
+    parent_dir.unlink(base_name.as_str())
+}

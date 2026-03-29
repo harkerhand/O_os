@@ -1,7 +1,7 @@
 //! 文件系统相关的系统调用
 
 use crate::{
-    fs::inode::{OpenFlags, open_file},
+    fs::inode::{OpenFlags, open_file, unlink_file},
     mem::{UserBuffer, translated_str},
     task::{current_task, current_user_token},
 };
@@ -66,4 +66,10 @@ pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> isize {
     } else {
         -1
     }
+}
+
+pub fn sys_unlink(path: *const u8) -> isize {
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    if unlink_file(path.as_str()) { 0 } else { -1 }
 }

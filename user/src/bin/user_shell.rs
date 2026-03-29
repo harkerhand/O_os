@@ -16,6 +16,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use log::info;
 use user_lib::{exec, fork, getchar, waitpid};
 
 #[unsafe(no_mangle)]
@@ -57,7 +58,7 @@ pub fn main() -> i32 {
                         let mut exit_code: i32 = 0;
                         let exit_pid = waitpid(pid, &mut exit_code);
                         assert_eq!(pid, exit_pid);
-                        println!("Shell: Process {} exited with code {}", pid, exit_code);
+                        info!("Shell: Process {} exited with code {}", pid, exit_code);
                     }
                     line.clear();
                 }

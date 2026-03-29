@@ -145,6 +145,69 @@ impl Inode {
     pub fn create_dir(&self, name: &str) -> Option<Arc<Inode>> {
         self.create_inode(name, DiskInodeType::Directory)
     }
+
+    /// 删除当前目录下名字为 name 的普通文件
+    pub fn unlink(&self, name: &str) -> bool {
+        let mut fs = self.fs.lock();
+        let file_pos = self.read_disk_inode(|disk_inode| {
+            if !disk_inode.is_dir() {
+                return None;
+            }
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+            for i in 0..file_count {
+                assert_eq!(
+                    disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                if dirent.name() == name {
+                    return Some((i, dirent.inode_number()));
+                }
+            }
+            None
+        });
+
+        let Some((index, inode_id)) = file_pos else {
+            return false;
+        };
+
+        let (target_block_id, target_block_offset) = fs.get_disk_inode_pos(inode_id);
+        let target_is_file =
+            get_block_cache(target_block_id as usize, Arc::clone(&self.block_device))
+                .lock()
+                .read(target_block_offset, |disk_inode: &DiskInode| {
+                    disk_inode.is_file()
+                });
+        if !target_is_file {
+            return false;
+        }
+
+        let data_blocks_dealloc =
+            get_block_cache(target_block_id as usize, Arc::clone(&self.block_device))
+                .lock()
+                .modify(target_block_offset, |disk_inode: &mut DiskInode| {
+                    let size = disk_inode.size;
+                    let data_blocks_dealloc = disk_inode.clear_size(&self.block_device);
+                    assert_eq!(
+                        data_blocks_dealloc.len(),
+                        DiskInode::total_blocks(size) as usize
+                    );
+                    data_blocks_dealloc
+                });
+        for data_block in data_blocks_dealloc {
+            fs.dealloc_data(data_block);
+        }
+        fs.dealloc_inode(inode_id);
+
+        self.modify_disk_inode(|disk_inode| {
+            let empty = DirEntry::empty();
+            disk_inode.write_at(index * DIRENT_SZ, empty.as_bytes(), &self.block_device);
+        });
+
+        block_cache_sync_all();
+        true
+    }
+
     /// 列出当前 Inode 下的所有文件和目录的名字
     pub fn ls(&self) -> Vec<String> {
         let _fs = self.fs.lock();
@@ -157,7 +220,9 @@ impl Inode {
                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
                     DIRENT_SZ,
                 );
-                v.push(String::from(dirent.name()));
+                if !dirent.name().is_empty() {
+                    v.push(String::from(dirent.name()));
+                }
             }
             v
         })
