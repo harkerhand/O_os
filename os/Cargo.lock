@@ -12,6 +12,7 @@ dependencies = [
  "lazy_static",
  "log",
  "riscv",
+ "spin 0.10.0",
  "virtio-drivers",
  "xmas-elf",
 ]

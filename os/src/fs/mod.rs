@@ -3,6 +3,7 @@
 
 use crate::mem::UserBuffer;
 pub mod inode;
+pub mod pipe;
 pub mod stdio;
 
 pub trait File: Send + Sync {

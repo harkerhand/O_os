@@ -1,8 +1,10 @@
 //! 文件系统相关的系统调用
 
+use log::info;
+
 use crate::{
     fs::inode::{OpenFlags, open_file, unlink_file},
-    mem::{UserBuffer, translated_str},
+    mem::{UserBuffer, translated_refmut, translated_str},
     task::{current_task, current_user_token},
 };
 
@@ -72,4 +74,19 @@ pub fn sys_unlink(path: *const u8) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
     if unlink_file(path.as_str()) { 0 } else { -1 }
+}
+
+pub fn sys_pipe(pipe: *mut usize) -> isize {
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let mut inner = task.inner_exclusive_access();
+    let (read_end, write_end) = crate::fs::pipe::make_pipe();
+    let read_fd = inner.alloc_fd();
+    inner.fd_table[read_fd] = Some(read_end);
+    let write_fd = inner.alloc_fd();
+    inner.fd_table[write_fd] = Some(write_end);
+    *translated_refmut(token, pipe) = read_fd;
+    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
+    info!("新建管道，读端 fd = {}, 写端 fd = {}", read_fd, write_fd);
+    0
 }
