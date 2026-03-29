@@ -59,6 +59,9 @@ impl File for Pipe {
         let mut already_write = 0;
         loop {
             let mut ring_buffer = self.buffer.lock();
+            if ring_buffer.all_read_ends_closed() {
+                return if already_write > 0 { already_write } else { -1 };
+            }
             let loop_write = ring_buffer.available_write();
             if loop_write == 0 {
                 drop(ring_buffer);
@@ -88,6 +91,7 @@ pub struct PipeRingBuffer {
     head: usize,
     tail: usize,
     count: usize,
+    read_end: Option<Weak<Pipe>>,
     write_end: Option<Weak<Pipe>>,
 }
 
@@ -98,8 +102,13 @@ impl PipeRingBuffer {
             head: 0,
             tail: 0,
             count: 0,
+            read_end: None,
             write_end: None,
         }
+    }
+
+    pub fn set_read_end(&mut self, read_end: &Arc<Pipe>) {
+        self.read_end = Some(Arc::downgrade(read_end));
     }
 
     pub fn set_write_end(&mut self, write_end: &Arc<Pipe>) {
@@ -132,6 +141,14 @@ impl PipeRingBuffer {
             true
         }
     }
+
+    pub fn all_read_ends_closed(&self) -> bool {
+        if let Some(read_end) = &self.read_end {
+            read_end.upgrade().is_none()
+        } else {
+            true
+        }
+    }
 }
 
 impl Pipe {
@@ -157,6 +174,8 @@ pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
     let buffer = Arc::new(Mutex::new(PipeRingBuffer::new()));
     let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone()));
     let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone()));
-    buffer.lock().set_write_end(&write_end);
+    let mut ring = buffer.lock();
+    ring.set_read_end(&read_end);
+    ring.set_write_end(&write_end);
     (read_end, write_end)
 }

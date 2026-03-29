@@ -7,6 +7,7 @@ extern crate user_lib;
 use user_lib::{close, fork, pipe, read, wait, write};
 
 static STR: &str = "Hello, world!";
+static BLOCK_STR: [u8; 64] = [b'X'; 64];
 
 #[unsafe(no_mangle)]
 pub fn main() -> i32 {
@@ -32,6 +33,24 @@ pub fn main() -> i32 {
         wait(&mut child_exit_code);
         assert_eq!(child_exit_code, 0);
         println!("pipetest passed!");
+
+        // 回归测试：读端全部关闭后，写端应失败返回 -1，不应卡住。
+        let mut pipe_fd2 = [0usize; 2];
+        pipe(&mut pipe_fd2);
+        println!("开始回归测试：关闭所有读端，再执行大块写入...");
+        if fork() == 0 {
+            close(pipe_fd2[0]);
+            close(pipe_fd2[1]);
+            return 0;
+        } else {
+            close(pipe_fd2[0]);
+            let mut exit_code2: i32 = 0;
+            wait(&mut exit_code2);
+            println!("子进程已关闭读端，接下来写入 64 字节（管道容量 32）");
+            assert_eq!(write(pipe_fd2[1], &BLOCK_STR), -1);
+            close(pipe_fd2[1]);
+            println!("pipe dead-reader test passed!");
+        }
         0
     }
 }
