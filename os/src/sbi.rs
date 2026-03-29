@@ -100,7 +100,12 @@ pub fn console_getchar(buf: *mut u8, len: usize) -> isize {
         sbi_call(SBI_CONSOLE_DBCN, 1, len, pa, 0)
     };
     if ret.error == 0 {
-        ret.value as isize
+        let read_len = ret.value as isize;
+        if read_len == 0 {
+            // 没有输入时等待下一次中断，降低忙轮询导致的满载。
+            riscv::asm::wfi();
+        }
+        read_len
     } else {
         -1
     }
