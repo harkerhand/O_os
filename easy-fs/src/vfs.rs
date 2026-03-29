@@ -52,7 +52,7 @@ impl Inode {
                 DIRENT_SZ,
             );
             if dirent.name() == name {
-                return Some(dirent.inode_number() as u32);
+                return Some(dirent.inode_number());
             }
         }
         None
@@ -146,7 +146,7 @@ impl Inode {
         self.create_inode(name, DiskInodeType::Directory)
     }
 
-    /// 删除当前目录下名字为 name 的普通文件
+    /// 删除当前目录下名字为 name 的节点（普通文件或空目录）
     pub fn unlink(&self, name: &str) -> bool {
         let mut fs = self.fs.lock();
         let file_pos = self.read_disk_inode(|disk_inode| {
@@ -172,13 +172,33 @@ impl Inode {
         };
 
         let (target_block_id, target_block_offset) = fs.get_disk_inode_pos(inode_id);
-        let target_is_file =
-            get_block_cache(target_block_id as usize, Arc::clone(&self.block_device))
-                .lock()
-                .read(target_block_offset, |disk_inode: &DiskInode| {
-                    disk_inode.is_file()
-                });
-        if !target_is_file {
+        let can_remove = get_block_cache(target_block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .read(target_block_offset, |disk_inode: &DiskInode| {
+                if disk_inode.is_file() {
+                    true
+                } else if disk_inode.is_dir() {
+                    let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+                    let mut dirent = DirEntry::empty();
+                    for i in 0..file_count {
+                        assert_eq!(
+                            disk_inode.read_at(
+                                i * DIRENT_SZ,
+                                dirent.as_bytes_mut(),
+                                &self.block_device,
+                            ),
+                            DIRENT_SZ,
+                        );
+                        if !dirent.name().is_empty() {
+                            return false;
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
+            });
+        if !can_remove {
             return false;
         }
 

@@ -124,7 +124,7 @@ impl DiskInode {
     /// 返回当前 inode 大小对应的总块数量，包含间接块占用的块数量
     pub fn total_blocks(size: u32) -> u32 {
         let data_blocks = Self::_data_blocks(size) as usize;
-        let mut total = data_blocks as usize;
+        let mut total = data_blocks;
         // 间接块1
         if data_blocks > INODE_DIRECT_COUNT {
             total += 1;
@@ -132,7 +132,7 @@ impl DiskInode {
         // 间接块1不够用，需要间接块2
         if data_blocks > INDIRECT1_BOUND {
             total += 1;
-            total += (data_blocks - INDIRECT1_BOUND).div_ceil(INODE_INDIRECT1_COUNT as usize);
+            total += (data_blocks - INDIRECT1_BOUND).div_ceil(INODE_INDIRECT1_COUNT);
         }
         total as u32
     }
