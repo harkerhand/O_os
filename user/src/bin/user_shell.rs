@@ -83,7 +83,7 @@ pub fn main() -> i32 {
     println!("Rust user shell");
     let mut line: String = String::new();
     let mut cwd = String::from("/");
-    print!("{} >> ", cwd);
+    blue!("{} >> ", cwd);
     loop {
         let c = getchar();
         match c {
@@ -107,7 +107,7 @@ pub fn main() -> i32 {
                             }
                         }
                         line.clear();
-                        print!("{} >> ", cwd);
+                        blue!("{} >> ", cwd);
                         continue;
                     }
 
@@ -139,7 +139,7 @@ pub fn main() -> i32 {
                     }
                     line.clear();
                 }
-                print!("{} >> ", cwd);
+                blue!("{} >> ", cwd);
             }
             BS | DL => {
                 if !line.is_empty() {

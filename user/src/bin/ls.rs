@@ -6,7 +6,10 @@ extern crate alloc;
 #[macro_use]
 extern crate user_lib;
 
-use alloc::string::String;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use user_lib::{OpenFlags, close, open, read};
 
 const DIRENT_SIZE: usize = 32;
@@ -29,6 +32,7 @@ fn main(argc: usize, argv: &[&str]) -> i32 {
     }
     let fd = fd as usize;
 
+    let mut entries = Vec::new();
     let mut buf = [0u8; DIRENT_SIZE * 16];
     loop {
         let n = read(fd, &mut buf);
@@ -50,10 +54,20 @@ fn main(argc: usize, argv: &[&str]) -> i32 {
                 .unwrap_or(DIRENT_NAME_SIZE);
             if name_end > 0
                 && let Ok(name) = core::str::from_utf8(&entry[..name_end])
+                && name != "initproc"
             {
-                println!("{}", name);
+                entries.push(name.to_string());
             }
             offset += DIRENT_SIZE;
+        }
+    }
+    entries.sort();
+    for (id, entry) in entries.iter().enumerate() {
+        print!("{}", entry);
+        if id % 9 == 8 || id == entries.len() - 1 {
+            println!("");
+        } else {
+            print!("  ");
         }
     }
 

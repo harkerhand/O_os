@@ -70,4 +70,10 @@ gdbclient:
 
 fmt:
 	@cd ../user && make fmt
+	@cd ../easy-fs && cargo fmt
 	@cargo fmt --all
+
+clippy:
+	@cd ../user && cargo clippy
+	@cd ../easy-fs && cargo clippy
+	@cargo clippy

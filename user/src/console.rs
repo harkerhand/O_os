@@ -32,6 +32,19 @@ macro_rules! println {
     }
 }
 
+#[macro_export]
+macro_rules! blue {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::console::print(format_args!("\x1b[34m{} \x1b[0m", format_args!($fmt $(, $($arg)+)?)));
+    }
+}
+#[macro_export]
+macro_rules! blueln {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::console::print(format_args!("\x1b[34m{} \x1b[0m\n", format_args!($fmt $(, $($arg)+)?)));
+    }
+}
+
 pub struct Stdin {
     buffer: [u8; 128],
     pos: usize,
