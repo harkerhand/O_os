@@ -1,6 +1,7 @@
 use core::arch::asm;
 
 const SYSCALL_GETCWD: usize = 17;
+const SYSCALL_DUP: usize = 24;
 const SYSCALL_UNLINKAT: usize = 35;
 const SYSCALL_CHDIR: usize = 49;
 const SYSCALL_OPENAT: usize = 56;
@@ -34,6 +35,10 @@ fn syscall(id: usize, args: [usize; 3]) -> isize {
 
 pub fn sys_openat(path: &str, flags: u32) -> isize {
     syscall(SYSCALL_OPENAT, [path.as_ptr() as usize, flags as usize, 0])
+}
+
+pub fn sys_dup(fd: usize) -> isize {
+    syscall(SYSCALL_DUP, [fd, 0, 0])
 }
 
 pub fn sys_unlinkat(path: &str) -> isize {

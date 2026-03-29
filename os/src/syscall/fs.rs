@@ -90,3 +90,17 @@ pub fn sys_pipe(pipe: *mut usize) -> isize {
     info!("新建管道，读端 fd = {}, 写端 fd = {}", read_fd, write_fd);
     0
 }
+
+pub fn sys_dup(fd: usize) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if fd < inner.fd_table.len()
+        && let Some(file) = inner.fd_table[fd].clone()
+    {
+        let new_fd = inner.alloc_fd();
+        inner.fd_table[new_fd] = Some(file);
+        new_fd as isize
+    } else {
+        -1
+    }
+}

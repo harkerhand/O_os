@@ -7,6 +7,7 @@
 //! 你可以在子模块中找到这样的函数，你也应该以这种方式实现系统调用。
 
 const SYSCALL_GETCWD: usize = 17;
+const SYSCALL_DUP: usize = 24;
 const SYSCALL_UNLINKAT: usize = 35;
 const SYSCALL_CHDIR: usize = 49;
 const SYSCALL_OPENAT: usize = 56;
@@ -38,6 +39,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
     trace!("syscall: id={}, args={:?}", syscall_id, args);
     match syscall_id {
         SYSCALL_GETCWD => sys_getcwd(args[0] as *mut u8, args[1]),
+        SYSCALL_DUP => sys_dup(args[0]),
         SYSCALL_UNLINKAT => sys_unlink(args[0] as *const u8),
         SYSCALL_CHDIR => sys_chdir(args[0] as *const u8),
         SYSCALL_OPENAT => sys_open(args[0] as *const u8, args[1] as u32),

@@ -162,3 +162,7 @@ pub fn close(fd: usize) -> isize {
 pub fn pipe(fd: &mut [usize; 2]) -> isize {
     sys_pipe(fd.as_mut_ptr())
 }
+
+pub fn dup(fd: usize) -> isize {
+    sys_dup(fd)
+}

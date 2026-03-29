@@ -13,12 +13,11 @@ const DL: u8 = 0x7fu8;
 const BS: u8 = 0x08u8;
 const ESC: u8 = 0x1bu8;
 
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::String, vec::Vec};
 use log::info;
-use user_lib::{chdir, exec, fork, getchar, getcwd_string, waitpid};
+use user_lib::{
+    OpenFlags, chdir, close, dup, exec, fork, getchar, getcwd_string, open, pipe, waitpid,
+};
 
 fn shell_prompt() -> String {
     getcwd_string().unwrap_or_else(|| String::from("/"))
@@ -93,49 +92,130 @@ pub fn main() -> i32 {
                     break;
                 }
                 if !line.is_empty() {
-                    let raw_args: Vec<_> = line.split_whitespace().collect();
-                    if raw_args[0] == "cd" {
-                        if raw_args.len() != 2 {
-                            println!("用法: cd <目录>");
-                        } else {
-                            let mut path = String::from(raw_args[1]);
-                            path.push('\0');
-                            if chdir(path.as_str()) < 0 {
-                                println!("cd: 不存在的目录 {}", raw_args[1]);
+                    let process_arguments_list: Vec<_> = line
+                        .as_str()
+                        .split('|')
+                        .map(ProcessArguments::new)
+                        .collect();
+                    let mut valid = true;
+                    for (i, process_args) in process_arguments_list.iter().enumerate() {
+                        if i == 0 {
+                            if !process_args.output.is_empty() {
+                                valid = false;
                             }
+                        } else if i == process_arguments_list.len() - 1 {
+                            if !process_args.input.is_empty() {
+                                valid = false;
+                            }
+                        } else if !process_args.output.is_empty() || !process_args.input.is_empty()
+                        {
+                            valid = false;
                         }
+                    }
+                    if process_arguments_list.len() == 1 {
+                        valid = true;
+                        if process_arguments_list[0].args_copy[0] == "cd\0" {
+                            if process_arguments_list[0].args_copy.len() != 2 {
+                                println!("用法: cd <目录>");
+                            } else if chdir(&process_arguments_list[0].args_copy[1]) < 0 {
+                                println!(
+                                    "cd: 不存在的目录 {}",
+                                    process_arguments_list[0].args_copy[1]
+                                );
+                            }
+                            line.clear();
+                            green!("{} > ", shell_prompt());
+                            continue;
+                        }
+                    }
+                    if !valid {
+                        println!("不支持的命令格式");
                         line.clear();
                         green!("{} > ", shell_prompt());
                         continue;
-                    }
-
-                    let args_copy: Vec<String> = raw_args
-                        .iter()
-                        .map(|&arg| {
-                            let mut string = arg.to_string();
-                            string.push('\0');
-                            string
-                        })
-                        .collect();
-                    let mut args_addr: Vec<*const u8> =
-                        args_copy.iter().map(|arg| arg.as_ptr()).collect();
-                    args_addr.push(core::ptr::null());
-
-                    let mut exec_path = resolve_exec_path(raw_args[0]);
-                    exec_path.push('\0');
-                    let pid = fork();
-                    if pid == 0 {
-                        // child process
-                        if exec(exec_path.as_str(), &args_addr) == -1 {
-                            println!("Error when executing!");
-                            return -4;
-                        }
-                        unreachable!();
                     } else {
+                        let mut pipes_fd = Vec::new();
+                        if !process_arguments_list.is_empty() {
+                            for _ in 0..process_arguments_list.len() - 1 {
+                                let mut pipe_fd = [0usize; 2];
+                                pipe(&mut pipe_fd);
+                                pipes_fd.push(pipe_fd);
+                            }
+                        }
+                        let mut children = Vec::new();
+                        for (i, process_argument) in process_arguments_list.iter().enumerate() {
+                            let pid = fork();
+                            if pid == 0 {
+                                let input = &process_argument.input;
+                                let output = &process_argument.output;
+                                let args_copy = &process_argument.args_copy;
+                                let args_addr = &process_argument.args_addr;
+                                // 重定向输入
+                                if !input.is_empty() {
+                                    let input_fd = open(input.as_str(), OpenFlags::RDONLY);
+                                    if input_fd == -1 {
+                                        println!("打开文件 {} 失败", input);
+                                        return -4;
+                                    }
+                                    let input_fd = input_fd as usize;
+                                    close(0);
+                                    assert_eq!(dup(input_fd), 0);
+                                    close(input_fd);
+                                }
+                                // 重定向输出
+                                if !output.is_empty() {
+                                    let output_fd = open(
+                                        output.as_str(),
+                                        OpenFlags::CREATE | OpenFlags::WRONLY,
+                                    );
+                                    if output_fd == -1 {
+                                        println!("打开文件 {} 失败", output);
+                                        return -4;
+                                    }
+                                    let output_fd = output_fd as usize;
+                                    close(1);
+                                    assert_eq!(dup(output_fd), 1);
+                                    close(output_fd);
+                                }
+                                // 如果不是第一个进程，从上一个进程的管道读取输入
+                                if i > 0 {
+                                    close(0);
+                                    let read_end = pipes_fd.get(i - 1).unwrap()[0];
+                                    assert_eq!(dup(read_end), 0);
+                                }
+                                // 将输出发送到下一个进程的管道
+                                if i < process_arguments_list.len() - 1 {
+                                    close(1);
+                                    let write_end = pipes_fd.get(i).unwrap()[1];
+                                    assert_eq!(dup(write_end), 1);
+                                }
+                                // 子进程不需要管道的文件描述符，关闭它们以免泄漏
+                                for pipe_fd in pipes_fd.iter() {
+                                    close(pipe_fd[0]);
+                                    close(pipe_fd[1]);
+                                }
+                                // 执行命令
+                                let mut exec_path = resolve_exec_path(args_copy[0].as_str());
+                                exec_path.push('\0');
+                                if exec(&exec_path, args_addr.as_slice()) == -1 {
+                                    println!("执行命令时出错!");
+                                    return -4;
+                                }
+                                unreachable!();
+                            } else {
+                                children.push(pid);
+                            }
+                        }
+                        for pipe_fd in pipes_fd.iter() {
+                            close(pipe_fd[0]);
+                            close(pipe_fd[1]);
+                        }
                         let mut exit_code: i32 = 0;
-                        let exit_pid = waitpid(pid, &mut exit_code);
-                        assert_eq!(pid, exit_pid);
-                        info!("Shell: Process {} exited with code {}", pid, exit_code);
+                        for pid in children.into_iter() {
+                            let exit_pid = waitpid(pid, &mut exit_code);
+                            assert_eq!(pid, exit_pid);
+                            info!("Shell: Process {} exited with code {}", pid, exit_code);
+                        }
                     }
                     line.clear();
                     cursor = 0;
@@ -181,4 +261,60 @@ pub fn main() -> i32 {
         }
     }
     0
+}
+
+#[derive(Debug)]
+struct ProcessArguments {
+    input: String,
+    output: String,
+    args_copy: Vec<String>,
+    args_addr: Vec<*const u8>,
+}
+
+impl ProcessArguments {
+    pub fn new(command: &str) -> Self {
+        let args: Vec<_> = command.split(' ').collect();
+        let mut args_copy: Vec<String> = args
+            .iter()
+            .filter(|&arg| !arg.is_empty())
+            .map(|&arg| {
+                let mut string = String::new();
+                string.push_str(arg);
+                string.push('\0');
+                string
+            })
+            .collect();
+
+        // redirect input
+        let mut input = String::new();
+        if let Some((idx, _)) = args_copy
+            .iter()
+            .enumerate()
+            .find(|(_, arg)| arg.as_str() == "<\0")
+        {
+            input = args_copy[idx + 1].clone();
+            args_copy.drain(idx..=idx + 1);
+        }
+
+        // redirect output
+        let mut output = String::new();
+        if let Some((idx, _)) = args_copy
+            .iter()
+            .enumerate()
+            .find(|(_, arg)| arg.as_str() == ">\0")
+        {
+            output = args_copy[idx + 1].clone();
+            args_copy.drain(idx..=idx + 1);
+        }
+
+        let mut args_addr: Vec<*const u8> = args_copy.iter().map(|arg| arg.as_ptr()).collect();
+        args_addr.push(core::ptr::null::<u8>());
+
+        Self {
+            input,
+            output,
+            args_copy,
+            args_addr,
+        }
+    }
 }
