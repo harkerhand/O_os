@@ -17,73 +17,26 @@ use alloc::{
     vec::Vec,
 };
 use log::info;
-use user_lib::{OpenFlags, close, exec, fork, getchar, open, waitpid};
+use user_lib::{chdir, exec, fork, getchar, getcwd_string, waitpid};
 
-fn normalize_path(cwd: &str, input: &str) -> String {
-    let mut parts: Vec<&str> = if input.starts_with('/') {
-        Vec::new()
-    } else {
-        cwd.split('/').filter(|p| !p.is_empty()).collect()
-    };
-    for part in input.split('/') {
-        if part.is_empty() || part == "." {
-            continue;
-        }
-        if part == ".." {
-            parts.pop();
-        } else {
-            parts.push(part);
-        }
-    }
-    if parts.is_empty() {
-        String::from("/")
-    } else {
+fn shell_prompt() -> String {
+    getcwd_string().unwrap_or_else(|| String::from("/"))
+}
+
+fn resolve_exec_path(cmd: &str) -> String {
+    if matches!(cmd, "ls" | "mkdir" | "cat" | "write_file") {
         let mut s = String::from("/");
-        for (idx, part) in parts.iter().enumerate() {
-            if idx > 0 {
-                s.push('/');
-            }
-            s.push_str(part);
-        }
+        s.push_str(cmd);
         s
+    } else {
+        String::from(cmd)
     }
-}
-
-fn check_dir_exists(path: &str) -> bool {
-    let mut c_path = String::from(path);
-    c_path.push('\0');
-    let fd = open(&c_path, OpenFlags::RDONLY | OpenFlags::DIRECTORY);
-    if fd < 0 {
-        return false;
-    }
-    close(fd as usize);
-    true
-}
-
-fn rewrite_args_with_cwd(raw_args: &[&str], cwd: &str) -> Vec<String> {
-    if raw_args.is_empty() {
-        return Vec::new();
-    }
-    let cmd = raw_args[0];
-    let should_rewrite = matches!(cmd, "ls" | "cat" | "touch" | "rm" | "mkdir");
-    let mut out = Vec::with_capacity(raw_args.len());
-    out.push(String::from(cmd));
-    for arg in raw_args.iter().skip(1) {
-        if should_rewrite && !arg.starts_with('-') {
-            out.push(normalize_path(cwd, arg));
-        } else {
-            out.push(String::from(*arg));
-        }
-    }
-    out
 }
 
 #[unsafe(no_mangle)]
 pub fn main() -> i32 {
-    println!("Rust user shell");
     let mut line: String = String::new();
-    let mut cwd = String::from("/");
-    blue!("{} >> ", cwd);
+    blue!("{} >> ", shell_prompt());
     loop {
         let c = getchar();
         match c {
@@ -99,22 +52,20 @@ pub fn main() -> i32 {
                         if raw_args.len() != 2 {
                             println!("用法: cd <目录>");
                         } else {
-                            let new_cwd = normalize_path(&cwd, raw_args[1]);
-                            if check_dir_exists(&new_cwd) {
-                                cwd = new_cwd;
-                            } else {
+                            let mut path = String::from(raw_args[1]);
+                            path.push('\0');
+                            if chdir(path.as_str()) < 0 {
                                 println!("cd: 不存在的目录 {}", raw_args[1]);
                             }
                         }
                         line.clear();
-                        blue!("{} >> ", cwd);
+                        blue!("{} >> ", shell_prompt());
                         continue;
                     }
 
-                    let argv = rewrite_args_with_cwd(&raw_args, &cwd);
-                    let args_copy: Vec<String> = argv
+                    let args_copy: Vec<String> = raw_args
                         .iter()
-                        .map(|arg| {
+                        .map(|&arg| {
                             let mut string = arg.to_string();
                             string.push('\0');
                             string
@@ -123,10 +74,13 @@ pub fn main() -> i32 {
                     let mut args_addr: Vec<*const u8> =
                         args_copy.iter().map(|arg| arg.as_ptr()).collect();
                     args_addr.push(core::ptr::null());
+
+                    let mut exec_path = resolve_exec_path(raw_args[0]);
+                    exec_path.push('\0');
                     let pid = fork();
                     if pid == 0 {
                         // child process
-                        if exec(args_copy[0].as_str(), &args_addr) == -1 {
+                        if exec(exec_path.as_str(), &args_addr) == -1 {
                             println!("Error when executing!");
                             return -4;
                         }
@@ -139,7 +93,7 @@ pub fn main() -> i32 {
                     }
                     line.clear();
                 }
-                blue!("{} >> ", cwd);
+                blue!("{} >> ", shell_prompt());
             }
             BS | DL => {
                 if !line.is_empty() {

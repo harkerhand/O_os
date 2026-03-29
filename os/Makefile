@@ -40,6 +40,7 @@ kernel:
 
 clean:
 	@cd ../user && make clean
+	@cd ../easy-fs && cargo clean
 	@cargo clean
 
 disasm: kernel
@@ -77,3 +78,5 @@ clippy:
 	@cd ../user && cargo clippy
 	@cd ../easy-fs && cargo clippy
 	@cargo clippy
+
+fmt-clippy: fmt clippy

@@ -32,6 +32,7 @@ pub struct TaskControlBlock {
     pub children: Vec<Arc<ProcessControlBlock>>,
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File>>>,
+    pub cwd: String,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -129,6 +130,7 @@ impl ProcessControlBlock {
                         Some(Arc::new(crate::fs::stdio::Stdout)),
                         Some(Arc::new(crate::fs::stdio::Stderr)),
                     ],
+                    cwd: String::from("/"),
                 })
             },
         };
@@ -222,6 +224,7 @@ impl ProcessControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: parent_inner.fd_table.clone(),
+                    cwd: parent_inner.cwd.clone(),
                 })
             },
         });

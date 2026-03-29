@@ -3,8 +3,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use log::{info, warn};
 
-use crate::fs::inode::{OpenFlags, open_file};
-use crate::mem::{translated_ref, translated_refmut, translated_str};
+use crate::fs::inode::{OpenFlags, chdir_path, open_file};
+use crate::mem::{UserBuffer, translated_ref, translated_refmut, translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
     INITPROCESS, add_task, change_program_brk, current_task, current_user_token,
@@ -111,5 +111,50 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         pid as isize
     } else {
         -2
+    }
+}
+
+pub fn sys_getcwd(buf: *mut u8, len: usize) -> isize {
+    if buf.is_null() || len == 0 {
+        return -1;
+    }
+    let task = current_task().unwrap();
+    let cwd = task.inner_exclusive_access().cwd.clone();
+    let bytes = cwd.as_bytes();
+    if bytes.len() + 1 > len {
+        return -1;
+    }
+
+    let token = current_user_token();
+    let user_buf = UserBuffer::from_raw_parts(token, buf as *const u8, len);
+    let mut idx = 0usize;
+    for chunk in user_buf.buf {
+        for byte in chunk.iter_mut() {
+            if idx < bytes.len() {
+                *byte = bytes[idx];
+            } else if idx == bytes.len() {
+                *byte = 0;
+                return (bytes.len() + 1) as isize;
+            } else {
+                return (bytes.len() + 1) as isize;
+            }
+            idx += 1;
+        }
+    }
+    -1
+}
+
+pub fn sys_chdir(path: *const u8) -> isize {
+    if path.is_null() {
+        return -1;
+    }
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    if let Some(new_cwd) = chdir_path(path.as_str()) {
+        let task = current_task().unwrap();
+        task.inner_exclusive_access().cwd = new_cwd;
+        0
+    } else {
+        -1
     }
 }

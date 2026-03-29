@@ -49,6 +49,7 @@ fn main(_argc: usize, _argv: &[&str]) -> i32 {
     panic!("Cannot find main!");
 }
 
+use alloc::string::String;
 use alloc::vec::Vec;
 use log::{debug, error};
 use syscall::*;
@@ -130,6 +131,28 @@ pub fn open(path: &str, flags: OpenFlags) -> isize {
 
 pub fn unlink(path: &str) -> isize {
     sys_unlinkat(path)
+}
+
+pub fn chdir(path: &str) -> isize {
+    sys_chdir(path)
+}
+
+pub fn getcwd(buf: &mut [u8]) -> isize {
+    sys_getcwd(buf)
+}
+
+pub fn getcwd_string() -> Option<String> {
+    let mut buf = [0u8; 256];
+    let n = getcwd(&mut buf);
+    if n <= 0 {
+        return None;
+    }
+    let n = n as usize;
+    if n == 0 || n > buf.len() {
+        return None;
+    }
+    let str_len = n.saturating_sub(1);
+    core::str::from_utf8(&buf[..str_len]).ok().map(String::from)
 }
 
 pub fn close(fd: usize) -> isize {

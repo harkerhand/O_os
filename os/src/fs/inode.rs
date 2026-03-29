@@ -3,6 +3,7 @@ use crate::drivers::block::BLOCK_DEVICE;
 use alloc::{string::String, sync::Arc, vec::Vec};
 use easy_fs::{EasyFileSystem, Inode};
 
+use crate::task::current_task;
 use crate::{fs::File, sync::SyncRefCell};
 
 pub struct OSInode {
@@ -85,14 +86,6 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn list_apps() {
-    println!("/**** APPS ****");
-    for app in ROOT_INODE.ls() {
-        println!("{}", app);
-    }
-    println!("**************/")
-}
-
 bitflags::bitflags! {
     pub struct OpenFlags: u32 {
         const RDONLY = 0;
@@ -120,6 +113,48 @@ fn path_components(path: &str) -> Vec<&str> {
     path.split('/')
         .filter(|part| !part.is_empty() && *part != ".")
         .collect()
+}
+
+fn current_cwd() -> String {
+    if let Some(task) = current_task() {
+        task.inner_exclusive_access().cwd.clone()
+    } else {
+        String::from("/")
+    }
+}
+
+fn normalize_path(cwd: &str, input: &str) -> String {
+    let mut parts: Vec<&str> = if input.starts_with('/') {
+        Vec::new()
+    } else {
+        cwd.split('/').filter(|p| !p.is_empty()).collect()
+    };
+    for part in input.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." {
+            parts.pop();
+        } else {
+            parts.push(part);
+        }
+    }
+    if parts.is_empty() {
+        String::from("/")
+    } else {
+        let mut s = String::from("/");
+        for (idx, part) in parts.iter().enumerate() {
+            if idx > 0 {
+                s.push('/');
+            }
+            s.push_str(part);
+        }
+        s
+    }
+}
+
+fn normalize_for_current(path: &str) -> String {
+    normalize_path(current_cwd().as_str(), path)
 }
 
 fn resolve_path(path: &str) -> Option<Arc<Inode>> {
@@ -158,9 +193,10 @@ fn resolve_parent_dir(path: &str, create_intermediate: bool) -> Option<(Arc<Inod
 }
 
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
+    let name = normalize_for_current(name);
     let (readable, writable) = flags.read_write();
     if flags.contains(OpenFlags::CREATE) {
-        let (parent_dir, base_name) = resolve_parent_dir(name, true)?;
+        let (parent_dir, base_name) = resolve_parent_dir(name.as_str(), true)?;
         if base_name.is_empty() {
             return None;
         }
@@ -185,7 +221,7 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
             inode.map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
         }
     } else {
-        resolve_path(name).and_then(|inode| {
+        resolve_path(name.as_str()).and_then(|inode| {
             if flags.contains(OpenFlags::DIRECTORY) && !inode.is_dir() {
                 return None;
             }
@@ -201,7 +237,8 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
 }
 
 pub fn unlink_file(name: &str) -> bool {
-    let (parent_dir, base_name) = match resolve_parent_dir(name, false) {
+    let name = normalize_for_current(name);
+    let (parent_dir, base_name) = match resolve_parent_dir(name.as_str(), false) {
         Some(v) => v,
         None => return false,
     };
@@ -209,4 +246,14 @@ pub fn unlink_file(name: &str) -> bool {
         return false;
     }
     parent_dir.unlink(base_name.as_str())
+}
+
+pub fn chdir_path(path: &str) -> Option<String> {
+    let normalized = normalize_for_current(path);
+    let inode = resolve_path(normalized.as_str())?;
+    if inode.is_dir() {
+        Some(normalized)
+    } else {
+        None
+    }
 }

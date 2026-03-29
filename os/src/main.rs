@@ -6,7 +6,7 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 
-use crate::{fs::inode::list_apps, timer::sleep_ms};
+use crate::timer::sleep_ms;
 
 extern crate alloc;
 
@@ -52,7 +52,6 @@ pub fn rust_main() -> ! {
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    list_apps();
     task::run();
     panic!("Unreachable in rust_main!");
 }
