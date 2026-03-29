@@ -71,12 +71,8 @@ impl Stdin {
                 return c;
             }
             let read_len = crate::read(0, &mut self.buffer);
-            if read_len < 0 {
+            if read_len <= 0 {
                 return 0;
-            }
-            if read_len == 0 {
-                crate::yield_();
-                continue;
             }
             self.pos = 0;
             self.len = read_len as usize;

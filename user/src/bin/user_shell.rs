@@ -24,7 +24,10 @@ fn shell_prompt() -> String {
 }
 
 fn resolve_exec_path(cmd: &str) -> String {
-    if matches!(cmd, "ls" | "mkdir" | "cat" | "touch" | "write_file") {
+    if matches!(
+        cmd,
+        "ls\0" | "mkdir\0" | "cat\0" | "touch\0" | "write_file\0"
+    ) {
         let mut s = String::from("/");
         s.push_str(cmd);
         s
@@ -124,6 +127,7 @@ pub fn main() -> i32 {
                                 );
                             }
                             line.clear();
+                            cursor = 0;
                             green!("{} > ", shell_prompt());
                             continue;
                         }
@@ -131,6 +135,7 @@ pub fn main() -> i32 {
                     if !valid {
                         println!("不支持的命令格式");
                         line.clear();
+                        cursor = 0;
                         green!("{} > ", shell_prompt());
                         continue;
                     } else {
@@ -195,8 +200,7 @@ pub fn main() -> i32 {
                                     close(pipe_fd[1]);
                                 }
                                 // 执行命令
-                                let mut exec_path = resolve_exec_path(args_copy[0].as_str());
-                                exec_path.push('\0');
+                                let exec_path = resolve_exec_path(args_copy[0].as_str());
                                 if exec(&exec_path, args_addr.as_slice()) == -1 {
                                     println!("执行命令时出错!");
                                     return -4;
@@ -217,9 +221,9 @@ pub fn main() -> i32 {
                             info!("Shell: Process {} exited with code {}", pid, exit_code);
                         }
                     }
-                    line.clear();
-                    cursor = 0;
                 }
+                line.clear();
+                cursor = 0;
                 green!("{} > ", shell_prompt());
             }
             BS | DL => {

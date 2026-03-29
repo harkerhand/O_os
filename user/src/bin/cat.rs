@@ -7,7 +7,11 @@ extern crate alloc;
 extern crate user_lib;
 
 use alloc::string::String;
-use user_lib::{OpenFlags, close, open, read};
+use user_lib::{OpenFlags, close, getchar, open, read, write};
+
+const CTRL_C: u8 = 3;
+const LF: u8 = b'\n';
+const CR: u8 = b'\r';
 
 fn to_cstr(path: &str) -> String {
     let mut s = String::from(path);
@@ -36,7 +40,11 @@ fn cat_one(path: &str) -> i32 {
             break;
         }
         let n = n as usize;
-        println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
+        if write(1, &buf[..n]) < 0 {
+            println!("cat: 写入标准输出失败");
+            close(fd);
+            return -1;
+        }
     }
 
     close(fd);
@@ -46,8 +54,23 @@ fn cat_one(path: &str) -> i32 {
 #[unsafe(no_mangle)]
 fn main(argc: usize, argv: &[&str]) -> i32 {
     if argc < 2 {
-        println!("用法: cat <文件> [文件 ...]");
-        return -1;
+        let mut line = String::new();
+        loop {
+            let c = getchar();
+            match c {
+                0 | CTRL_C => {
+                    print!("{}", line);
+                    return 0;
+                }
+                LF | CR => {
+                    println!("{}", line);
+                    line.clear();
+                }
+                _ => {
+                    line.push(c as char);
+                }
+            }
+        }
     }
 
     let mut ret = 0;
