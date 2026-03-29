@@ -21,6 +21,16 @@ fn to_cstr(path: &str) -> String {
     s
 }
 
+fn is_dir(path: &str) -> bool {
+    let c_path = to_cstr(path);
+    let fd = open(&c_path, OpenFlags::RDONLY | OpenFlags::DIRECTORY);
+    if fd < 0 {
+        return false;
+    }
+    close(fd as usize);
+    true
+}
+
 #[unsafe(no_mangle)]
 fn main(argc: usize, argv: &[&str]) -> i32 {
     let path = if argc > 1 { argv[1] } else { "." };
@@ -63,7 +73,11 @@ fn main(argc: usize, argv: &[&str]) -> i32 {
     }
     entries.sort();
     for (id, entry) in entries.iter().enumerate() {
-        print!("{}", entry);
+        if is_dir(entry) {
+            blue!("{}/", entry);
+        } else {
+            print!("{}", entry);
+        }
         if id % 9 == 8 || id == entries.len() - 1 {
             println!("");
         } else {

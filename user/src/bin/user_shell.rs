@@ -24,7 +24,7 @@ fn shell_prompt() -> String {
 }
 
 fn resolve_exec_path(cmd: &str) -> String {
-    if matches!(cmd, "ls" | "mkdir" | "cat" | "write_file") {
+    if matches!(cmd, "ls" | "mkdir" | "cat" | "touch" | "write_file") {
         let mut s = String::from("/");
         s.push_str(cmd);
         s
@@ -36,7 +36,7 @@ fn resolve_exec_path(cmd: &str) -> String {
 #[unsafe(no_mangle)]
 pub fn main() -> i32 {
     let mut line: String = String::new();
-    blue!("{} >> ", shell_prompt());
+    green!("{} > ", shell_prompt());
     loop {
         let c = getchar();
         match c {
@@ -59,7 +59,7 @@ pub fn main() -> i32 {
                             }
                         }
                         line.clear();
-                        blue!("{} >> ", shell_prompt());
+                        green!("{} > ", shell_prompt());
                         continue;
                     }
 
@@ -93,7 +93,7 @@ pub fn main() -> i32 {
                     }
                     line.clear();
                 }
-                blue!("{} >> ", shell_prompt());
+                green!("{} > ", shell_prompt());
             }
             BS | DL => {
                 if !line.is_empty() {
