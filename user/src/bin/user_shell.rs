@@ -11,6 +11,7 @@ const LF: u8 = 0x0au8;
 const CR: u8 = 0x0du8;
 const DL: u8 = 0x7fu8;
 const BS: u8 = 0x08u8;
+const ESC: u8 = 0x1bu8;
 
 use alloc::{
     string::{String, ToString},
@@ -33,9 +34,54 @@ fn resolve_exec_path(cmd: &str) -> String {
     }
 }
 
+fn move_cursor_left() {
+    print!("{}", BS as char);
+}
+
+fn move_cursor_right(ch: u8) {
+    print!("{}", ch as char);
+}
+
+fn handle_escape_sequence(line: &String, cursor: &mut usize) {
+    let next = getchar();
+    if next != b'[' {
+        return;
+    }
+    let ch = getchar();
+    match ch {
+        b'D' => {
+            if *cursor > 0 {
+                move_cursor_left();
+                *cursor -= 1;
+            }
+        }
+        b'C' => {
+            if *cursor < line.len() {
+                move_cursor_right(line.as_bytes()[*cursor]);
+                *cursor += 1;
+            }
+        }
+        b'A' | b'B' => {
+            // 上下箭头暂不支持历史，直接忽略
+        }
+        _ => {
+            // 吞掉诸如 ESC [ 3 ~ 这类扩展序列，避免污染输入行
+            if !ch.is_ascii_alphabetic() && ch != b'~' {
+                loop {
+                    let tail = getchar();
+                    if tail.is_ascii_alphabetic() || tail == b'~' {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub fn main() -> i32 {
     let mut line: String = String::new();
+    let mut cursor: usize = 0;
     green!("{} > ", shell_prompt());
     loop {
         let c = getchar();
@@ -92,20 +138,45 @@ pub fn main() -> i32 {
                         info!("Shell: Process {} exited with code {}", pid, exit_code);
                     }
                     line.clear();
+                    cursor = 0;
                 }
                 green!("{} > ", shell_prompt());
             }
             BS | DL => {
-                if !line.is_empty() {
-                    print!("{}", BS as char);
+                if cursor > 0 {
+                    let remove_idx = cursor - 1;
+                    line.remove(remove_idx);
+                    cursor -= 1;
+
+                    move_cursor_left();
+                    let tail = &line[remove_idx..];
+                    print!("{}", tail);
                     print!(" ");
-                    print!("{}", BS as char);
-                    line.pop();
+                    for _ in 0..(tail.len() + 1) {
+                        move_cursor_left();
+                    }
                 }
             }
+            ESC => {
+                handle_escape_sequence(&line, &mut cursor);
+            }
             _ => {
-                print!("{}", c as char);
-                line.push(c as char);
+                // 仅接受可打印字符，避免控制字符污染命令行状态
+                if c == b' ' || c.is_ascii_graphic() {
+                    if cursor == line.len() {
+                        print!("{}", c as char);
+                        line.push(c as char);
+                        cursor += 1;
+                    } else {
+                        line.insert(cursor, c as char);
+                        let tail = &line[cursor..];
+                        print!("{}", tail);
+                        cursor += 1;
+                        for _ in 0..(tail.len() - 1) {
+                            move_cursor_left();
+                        }
+                    }
+                }
             }
         }
     }
