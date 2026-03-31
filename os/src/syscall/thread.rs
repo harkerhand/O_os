@@ -67,6 +67,9 @@ pub fn sys_waittid(tid: usize) -> i32 {
     let process = task.process.upgrade().unwrap();
     let task_inner = task.inner_exclusive_access();
     let mut process_inner = process.inner_exclusive_access();
+    if tid >= process_inner.tasks.len() {
+        return -1;
+    }
     // a thread cannot wait for itself
     if task_inner.res.as_ref().unwrap().tid == tid {
         return -1;
@@ -82,8 +85,12 @@ pub fn sys_waittid(tid: usize) -> i32 {
         return -1;
     }
     if let Some(exit_code) = exit_code {
-        // dealloc the exited thread
-        process_inner.tasks[tid] = None;
+        // 先把线程从任务表摘下来，避免持有 process_inner 锁时触发线程资源 Drop。
+        // ThreadUserRes::drop 会再次借用 process.inner，若在锁内直接置 None 会触发二次借用 panic。
+        let recycled_thread = process_inner.tasks[tid].take();
+        drop(process_inner);
+        drop(task_inner);
+        drop(recycled_thread);
         exit_code
     } else {
         // waited thread has not exited

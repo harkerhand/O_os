@@ -44,7 +44,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let process = thread.process.upgrade().unwrap();
     let tid = thread_inner.res.as_ref().unwrap().tid;
     thread_inner.exit_code = Some(exit_code);
-    thread_inner.res = None;
+    // 非主线程的资源延迟到 waittid 回收，避免 tid 被过早复用。
+    if tid == 0 {
+        thread_inner.res = None;
+    }
     drop(thread_inner);
     if tid == 0 {
         add_stopping_task(thread);

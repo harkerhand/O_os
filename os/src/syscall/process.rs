@@ -14,7 +14,18 @@ use crate::timer::get_time_ms;
 
 /// 系统调用：退出当前应用并运行下一个应用
 pub fn sys_exit(exit_code: i32) -> ! {
-    info!("应用退出，退出码为 {}", exit_code);
+    let pid = current_task().unwrap().process.upgrade().unwrap().getpid();
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
+    info!(
+        "退出线程: pid[{}] tid[{}] exit_code[{}]",
+        pid, tid, exit_code
+    );
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
