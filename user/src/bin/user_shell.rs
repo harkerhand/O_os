@@ -13,7 +13,10 @@ const DL: u8 = 0x7fu8;
 const BS: u8 = 0x08u8;
 const ESC: u8 = 0x1bu8;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use log::info;
 use user_lib::{
     OpenFlags, chdir, close, dup, exec, fork, getchar, getcwd_string, open, pipe, waitpid,
@@ -95,7 +98,23 @@ pub fn main() -> i32 {
                     break;
                 }
                 if !line.is_empty() {
-                    let process_arguments_list: Vec<_> = line
+                    // 检测后台运行标志 (&)
+                    let (command_line, run_background) = if line.trim_end() == "&" {
+                        println!("错误: & 符号必须在命令后面");
+                        line.clear();
+                        cursor = 0;
+                        green!("{} > ", shell_prompt());
+                        continue;
+                    } else if line.ends_with(" &") || line.ends_with("\t&") {
+                        (
+                            line[..line.rfind('&').unwrap()].trim_end().to_string(),
+                            true,
+                        )
+                    } else {
+                        (line.clone(), false)
+                    };
+
+                    let process_arguments_list: Vec<_> = command_line
                         .as_str()
                         .split('|')
                         .map(ProcessArguments::new)
@@ -214,11 +233,18 @@ pub fn main() -> i32 {
                             close(pipe_fd[0]);
                             close(pipe_fd[1]);
                         }
-                        let mut exit_code: i32 = 0;
-                        for pid in children.into_iter() {
-                            let exit_pid = waitpid(pid, &mut exit_code);
-                            assert_eq!(pid, exit_pid);
-                            info!("Shell: Process {} exited with code {}", pid, exit_code);
+
+                        // 如果是后台运行，不等待子进程完成
+                        if run_background {
+                            println!("[后台进程启动] PID: {:?}", children);
+                        } else {
+                            // 前台运行：等待所有子进程完成
+                            let mut exit_code: i32 = 0;
+                            for pid in children.into_iter() {
+                                let exit_pid = waitpid(pid, &mut exit_code);
+                                assert_eq!(pid, exit_pid);
+                                info!("Shell: 进程 {} 退出，代码 {}", pid, exit_code);
+                            }
                         }
                     }
                 }
