@@ -5,15 +5,15 @@
 mod context;
 
 use crate::{
-    config::{TRAMPOLINE, TRAP_CONTEXT},
+    config::TRAMPOLINE,
     syscall::syscall,
     task::{
-        current_trap_cx, current_user_token, exit_current_and_run_next,
+        current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
     timer::set_next_trigger,
 };
-use log::{debug, error};
+use log::error;
 use riscv::{
     ExceptionNumber, InterruptNumber,
     interrupt::{Exception, Interrupt},
@@ -89,7 +89,6 @@ pub fn trap_handler() -> ! {
         Trap::Interrupt(code) => {
             match Interrupt::from_number(code) {
                 Ok(Interrupt::SupervisorTimer) => {
-                    debug!("时间中断");
                     // 重新设置下一次 timer interrupt
                     set_next_trigger();
                     // 切换到下一个任务
@@ -117,7 +116,7 @@ pub fn enable_timer_interrupt() {
 /// finally, jump to new addr of __restore asm function
 pub fn trap_return() -> ! {
     set_user_trap_entry();
-    let trap_cx_ptr = TRAP_CONTEXT;
+    let trap_cx_user_va = current_trap_cx_user_va();
     let user_satp = current_user_token();
     unsafe extern "C" {
         unsafe fn __alltraps();
@@ -130,7 +129,7 @@ pub fn trap_return() -> ! {
             "fence.i",
             "jr {restore_va}",             // jump to new addr of __restore asm function
             restore_va = in(reg) restore_va,
-            in("a0") trap_cx_ptr,      // a0 = virt addr of Trap Context
+            in("a0") trap_cx_user_va,      // a0 = virt addr of Trap Context
             in("a1") user_satp,        // a1 = phy addr of usr page table
             options(noreturn)
         );

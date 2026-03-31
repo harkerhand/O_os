@@ -5,16 +5,16 @@ use log::info;
 use crate::{
     fs::inode::{OpenFlags, open_file, unlink_file},
     mem::{UserBuffer, translated_refmut, translated_str},
-    task::{current_task, current_user_token},
+    task::{current_process, current_user_token},
 };
 
 /// 系统调用：打开文件，返回文件描述符
 pub fn sys_open(path: *const u8, flags: u32) -> isize {
-    let task = current_task().unwrap();
+    let process = current_process();
     let token = current_user_token();
     let path = translated_str(token, path);
     if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
-        let mut inner = task.inner_exclusive_access();
+        let mut inner = process.inner_exclusive_access();
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
         fd as isize
@@ -25,8 +25,8 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
 
 /// 系统调用：关闭文件描述符
 pub fn sys_close(fd: usize) -> isize {
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -40,7 +40,7 @@ pub fn sys_close(fd: usize) -> isize {
 /// 向文件描述符写入数据
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
-    let current_pcb = current_task().unwrap();
+    let current_pcb = current_process();
     let current_tcb = current_pcb.inner_exclusive_access();
     if fd < current_tcb.fd_table.len()
         && let Some(file) = &current_tcb.fd_table[fd]
@@ -56,7 +56,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 
 pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> isize {
     let token = current_user_token();
-    let current_pcb = current_task().unwrap();
+    let current_pcb = current_process();
     let current_tcb = current_pcb.inner_exclusive_access();
     if fd < current_tcb.fd_table.len()
         && let Some(file) = &current_tcb.fd_table[fd]
@@ -77,9 +77,9 @@ pub fn sys_unlink(path: *const u8) -> isize {
 }
 
 pub fn sys_pipe(pipe: *mut usize) -> isize {
-    let task = current_task().unwrap();
+    let process = current_process();
     let token = current_user_token();
-    let mut inner = task.inner_exclusive_access();
+    let mut inner = process.inner_exclusive_access();
     let (read_end, write_end) = crate::fs::pipe::make_pipe();
     let read_fd = inner.alloc_fd();
     inner.fd_table[read_fd] = Some(read_end);
@@ -92,8 +92,8 @@ pub fn sys_pipe(pipe: *mut usize) -> isize {
 }
 
 pub fn sys_dup(fd: usize) -> isize {
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
     if fd < inner.fd_table.len()
         && let Some(file) = inner.fd_table[fd].clone()
     {

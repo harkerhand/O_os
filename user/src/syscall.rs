@@ -18,6 +18,18 @@ const SYSCALL_MUNMAP: usize = 215;
 const SYSCALL_FORK: usize = 220;
 const SYSCALL_EXEC: usize = 221;
 const SYSCALL_WAITPID: usize = 260;
+const SYSCALL_THREAD_CREATE: usize = 460;
+const SYSCALL_GETTID: usize = 178;
+const SYSCALL_WAITTID: usize = 462;
+const SYSCALL_MUTEX_CREATE: usize = 1010;
+const SYSCALL_MUTEX_LOCK: usize = 1011;
+const SYSCALL_MUTEX_UNLOCK: usize = 1012;
+const SYSCALL_SEMAPHORE_CREATE: usize = 1020;
+const SYSCALL_SEMAPHORE_UP: usize = 1021;
+const SYSCALL_SEMAPHORE_DOWN: usize = 1022;
+const SYSCALL_CONDVAR_CREATE: usize = 1030;
+const SYSCALL_CONDVAR_SIGNAL: usize = 1031;
+const SYSCALL_CONDVAR_WAIT: usize = 1032;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -113,4 +125,52 @@ pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
 
 pub fn sys_waitpid(pid: isize, status: *mut i32) -> isize {
     syscall(SYSCALL_WAITPID, [pid as usize, status as usize, 0])
+}
+
+pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
+    syscall(SYSCALL_THREAD_CREATE, [entry, arg, 0])
+}
+
+pub fn sys_gettid() -> isize {
+    syscall(SYSCALL_GETTID, [0; 3])
+}
+
+pub fn sys_waittid(tid: usize) -> isize {
+    syscall(SYSCALL_WAITTID, [tid, 0, 0])
+}
+
+pub fn sys_mutex_create(blocking: bool) -> isize {
+    syscall(SYSCALL_MUTEX_CREATE, [blocking as usize, 0, 0])
+}
+
+pub fn sys_mutex_lock(id: usize) -> isize {
+    syscall(SYSCALL_MUTEX_LOCK, [id, 0, 0])
+}
+
+pub fn sys_mutex_unlock(id: usize) -> isize {
+    syscall(SYSCALL_MUTEX_UNLOCK, [id, 0, 0])
+}
+
+pub fn sys_semaphore_create(res_count: usize) -> isize {
+    syscall(SYSCALL_SEMAPHORE_CREATE, [res_count, 0, 0])
+}
+
+pub fn sys_semaphore_up(sem_id: usize) -> isize {
+    syscall(SYSCALL_SEMAPHORE_UP, [sem_id, 0, 0])
+}
+
+pub fn sys_semaphore_down(sem_id: usize) -> isize {
+    syscall(SYSCALL_SEMAPHORE_DOWN, [sem_id, 0, 0])
+}
+
+pub fn sys_condvar_create() -> isize {
+    syscall(SYSCALL_CONDVAR_CREATE, [0, 0, 0])
+}
+
+pub fn sys_condvar_signal(condvar_id: usize) -> isize {
+    syscall(SYSCALL_CONDVAR_SIGNAL, [condvar_id, 0, 0])
+}
+
+pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
+    syscall(SYSCALL_CONDVAR_WAIT, [condvar_id, mutex_id, 0])
 }

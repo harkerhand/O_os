@@ -8,19 +8,21 @@ mod pid;
 mod task;
 
 use crate::fs::inode::{OpenFlags, open_file};
+use crate::task::manager::{add_stopping_task, remove_from_pid2process};
+use crate::task::pid::IDLE_PID;
 use crate::task::proc::{schedule, take_current_task};
 use crate::task::task::ProcessControlBlock;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use log::info;
 use task::TaskStatus;
 mod manager;
 mod proc;
 
 pub use context::TaskContext;
-pub use manager::add_task;
-pub use proc::{
-    change_program_brk, current_task, current_trap_cx, current_user_token, mmap_current,
-    munmap_current, run,
-};
+pub use manager::*;
+pub use proc::*;
+pub use task::*;
 
 /// 挂起当前任务，然后运行下一个任务
 pub fn suspend_current_and_run_next() {
@@ -37,20 +39,57 @@ pub fn suspend_current_and_run_next() {
 
 /// 退出当前任务，然后运行下一个任务
 pub fn exit_current_and_run_next(exit_code: i32) {
-    let process = take_current_task().unwrap();
-    let mut current_tcb = process.inner_exclusive_access();
-    current_tcb.task_status = TaskStatus::Zombie;
-    current_tcb.exit_code = exit_code;
-    {
-        let mut initproc_inner = INITPROCESS.inner_exclusive_access();
-        for child in current_tcb.children.iter() {
-            child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROCESS));
-            initproc_inner.children.push(child.clone());
-        }
+    let thread = take_current_task().unwrap();
+    let mut thread_inner = thread.inner_exclusive_access();
+    let process = thread.process.upgrade().unwrap();
+    let tid = thread_inner.res.as_ref().unwrap().tid;
+    thread_inner.exit_code = Some(exit_code);
+    thread_inner.res = None;
+    drop(thread_inner);
+    if tid == 0 {
+        add_stopping_task(thread);
+    } else {
+        drop(thread);
     }
-    current_tcb.children.clear();
-    current_tcb.memory_set.recycle_data_pages();
-    drop(current_tcb);
+    // 如果是主线程
+    if tid == 0 {
+        let pid = process.getpid();
+        if pid == IDLE_PID {
+            info!("Idle 进程退出，退出码为 {}", exit_code);
+            if exit_code != 0 {
+                info!("Idle 进程异常退出，正在关闭系统...");
+                crate::sbi::panic_shutdown();
+            } else {
+                info!("Idle 进程正常退出，正在关闭系统...");
+                crate::sbi::shutdown();
+            }
+        }
+        remove_from_pid2process(pid);
+
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.is_zombie = true;
+        process_inner.exit_code = exit_code;
+        {
+            let mut initproc_inner = INITPROCESS.inner_exclusive_access();
+            for child in process_inner.children.iter() {
+                child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROCESS));
+                initproc_inner.children.push(child.clone());
+            }
+        }
+        let mut recycle_res = Vec::new();
+        for thread in process_inner.tasks.iter().filter(|t| t.is_some()) {
+            let thread = thread.as_ref().unwrap();
+            let mut thread_inner = thread.inner_exclusive_access();
+            if let Some(res) = thread_inner.res.take() {
+                recycle_res.push(res);
+            }
+        }
+        drop(process_inner);
+        recycle_res.clear();
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.children.clear();
+        process_inner.memory_set.recycle_data_pages();
+    }
     drop(process);
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut TaskContext);
@@ -58,13 +97,13 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 lazy_static::lazy_static! {
-    pub static ref INITPROCESS: Arc<ProcessControlBlock> = Arc::new({
+    pub static ref INITPROCESS: Arc<ProcessControlBlock> = {
         let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
         ProcessControlBlock::new(&v)
-    });
+    };
 }
 
 pub fn add_initproc() {
-    manager::add_task(INITPROCESS.clone());
+    let _initproc = INITPROCESS.clone();
 }

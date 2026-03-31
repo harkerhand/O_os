@@ -15,14 +15,10 @@ pub const MEMORY_END: usize = 0x8800_0000;
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 
 /// trap context 的地址，位于 trampoline 的前一页
-pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
+pub const TRAP_CONTEXT_SIZE: usize = PAGE_SIZE;
 
 /// 用户栈的大小
 pub const USER_STACK_SIZE: usize = PAGE_SIZE * 4; // 16KB
-/// 用户栈顶，即TrapContext的位置，向下生长
-pub const USER_STACK_TOP: usize = TRAP_CONTEXT;
-/// 用户栈底，位于trap context前
-pub const USER_STACK_BOTTOM: usize = TRAP_CONTEXT - USER_STACK_SIZE;
 
 /// 内核堆的大小，由堆管理器控制，大小为 16MB
 pub const KERNEL_HEAP_SIZE: usize = 0x1000000;

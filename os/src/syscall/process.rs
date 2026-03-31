@@ -7,7 +7,7 @@ use crate::fs::inode::{OpenFlags, chdir_path, open_file};
 use crate::mem::{UserBuffer, translated_ref, translated_refmut, translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
-    INITPROCESS, add_task, change_program_brk, current_task, current_user_token,
+    INITPROCESS, change_program_brk, current_process, current_task, current_user_token,
     exit_current_and_run_next, suspend_current_and_run_next,
 };
 use crate::timer::get_time_ms;
@@ -21,7 +21,7 @@ pub fn sys_exit(exit_code: i32) -> ! {
 
 /// 系统调用：让出 CPU 给其他应用
 pub fn sys_yield() -> isize {
-    let process = current_task().unwrap();
+    let process = current_process();
     if Arc::ptr_eq(&process, &INITPROCESS) && process.inner_exclusive_access().children.is_empty() {
         info!("initproc has no children, shutting down.");
         shutdown();
@@ -47,12 +47,13 @@ pub fn sys_sbrk(size: i32) -> isize {
 }
 
 pub fn sys_fork() -> isize {
-    let current_process = current_task().unwrap();
+    let current_process = current_process();
     let new_process = current_process.fork();
     let new_pid = new_process.pid.0;
-    let trap_cx = new_process.inner_exclusive_access().get_trap_cx();
+    let new_process_inner = new_process.inner_exclusive_access();
+    let thread = new_process_inner.tasks[0].as_ref().unwrap();
+    let trap_cx = thread.inner_exclusive_access().get_trap_cx();
     trap_cx.x[10] = 0; // 子进程 fork 的返回值为 0
-    add_task(new_process);
     new_pid as isize
 }
 
@@ -76,9 +77,9 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     info!("exec path: {}, args: {:?}", path, args_vec);
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let all_data = app_inode.read_all();
-        let task = current_task().unwrap();
+        let process = current_process();
         let argc = args_vec.len();
-        task.exec(&all_data, args_vec);
+        process.exec(&all_data, args_vec);
         argc as isize
     } else {
         -1
@@ -86,28 +87,28 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
 }
 
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    let process = current_task().unwrap();
-    let mut current_tcb = process.inner_exclusive_access();
-    if !current_tcb
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    if !process_inner
         .children
         .iter()
-        .any(|p| pid == -1 || pid as usize == p.get_pid())
+        .any(|p| pid == -1 || pid as usize == p.getpid())
     {
         return -1; // 子进程
     }
-    let pair = current_tcb.children.iter().enumerate().find(|(_, p)| {
-        p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.get_pid())
+    let pair = process_inner.children.iter().enumerate().find(|(_, p)| {
+        p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
     });
     if let Some((idx, _)) = pair {
-        let child = current_tcb.children.remove(idx);
+        let child = process_inner.children.remove(idx);
         assert_eq!(
             Arc::strong_count(&child),
             1,
             "Child process should have no other references"
         );
-        let pid = child.get_pid();
+        let pid = child.getpid();
         let exit_code = child.inner_exclusive_access().exit_code;
-        *translated_refmut(current_tcb.memory_set.token(), exit_code_ptr) = exit_code;
+        *translated_refmut(process_inner.memory_set.token(), exit_code_ptr) = exit_code;
         pid as isize
     } else {
         -2

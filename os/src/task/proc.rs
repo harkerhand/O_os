@@ -1,6 +1,7 @@
 //! 进程
 
 use alloc::sync::Arc;
+use log::info;
 
 use crate::{
     error::KernelResult,
@@ -9,13 +10,13 @@ use crate::{
         TaskContext, add_initproc,
         manager::fetch_task,
         switch::__switch,
-        task::{ProcessControlBlock, TaskStatus},
+        task::{ProcessControlBlock, TaskStatus, ThreadControlBlock},
     },
     trap::TrapContext,
 };
 
 pub struct ProcessorManager {
-    current: Option<Arc<ProcessControlBlock>>,
+    current: Option<Arc<ThreadControlBlock>>,
     idle_task_cx: TaskContext,
 }
 
@@ -24,10 +25,10 @@ lazy_static::lazy_static! {
 }
 
 impl ProcessorManager {
-    pub fn take_current(&mut self) -> Option<Arc<ProcessControlBlock>> {
+    pub fn take_current(&mut self) -> Option<Arc<ThreadControlBlock>> {
         self.current.take()
     }
-    pub fn current(&self) -> Option<Arc<ProcessControlBlock>> {
+    pub fn current(&self) -> Option<Arc<ThreadControlBlock>> {
         self.current.as_ref().cloned()
     }
 
@@ -42,17 +43,20 @@ impl ProcessorManager {
     }
 }
 
-pub fn take_current_task() -> Option<Arc<ProcessControlBlock>> {
+pub fn take_current_task() -> Option<Arc<ThreadControlBlock>> {
     PROCESSOR.exclusive_access().take_current()
 }
 
-pub fn current_task() -> Option<Arc<ProcessControlBlock>> {
+pub fn current_task() -> Option<Arc<ThreadControlBlock>> {
     PROCESSOR.exclusive_access().current()
 }
 
+pub fn current_process() -> Arc<ProcessControlBlock> {
+    current_task().unwrap().process.upgrade().unwrap()
+}
+
 pub fn current_user_token() -> usize {
-    let task = current_task().unwrap();
-    task.inner_exclusive_access().get_user_token()
+    current_process().inner_exclusive_access().get_user_token()
 }
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
@@ -62,29 +66,37 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
-pub fn change_program_brk(size: i32) -> KernelResult<usize> {
+pub fn current_trap_cx_user_va() -> usize {
     current_task()
         .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .trap_cx_user_va()
+}
+
+pub fn change_program_brk(size: i32) -> KernelResult<usize> {
+    current_process()
         .inner_exclusive_access()
         .change_program_brk(size)
 }
 
 pub fn mmap_current(start: usize, end: usize, prot: usize) -> isize {
-    current_task()
-        .unwrap()
+    current_process()
         .inner_exclusive_access()
         .mmap(start, end, prot)
 }
 
 pub fn munmap_current(start: usize, end: usize) -> isize {
-    current_task()
-        .unwrap()
+    current_process()
         .inner_exclusive_access()
         .munmap(start, end)
 }
 
 pub fn run() {
     add_initproc();
+    info!("开始调度");
     loop {
         let mut processer_manager = PROCESSOR.exclusive_access();
         if let Some(task) = fetch_task() {

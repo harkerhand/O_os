@@ -6,9 +6,7 @@ use lazy_static::*;
 use log::{debug, info};
 use riscv::register::satp::{self, Satp};
 
-use crate::config::{
-    MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_BOTTOM, USER_STACK_TOP,
-};
+use crate::config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE};
 use crate::error::{KernelError, KernelResult};
 use crate::mem::addr::{PhysAddr, PhysPageNum, StepByOne, VPNRange, VirtAddr, VirtPageNum};
 use crate::mem::frame_allocator::{FrameTracker, frame_alloc};
@@ -222,17 +220,6 @@ impl MemorySet {
                 );
             }
         }
-        // 映射用户栈，位于用户空间顶部TrapContext下，向下生长
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(USER_STACK_BOTTOM),
-                VirtAddr(USER_STACK_TOP),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
-
         let max_end_va: VirtAddr = max_end_vpn.into();
         // 映射堆，位于用户空间底部的elf段之后，向上生长
         memory_set.push(
@@ -241,16 +228,6 @@ impl MemorySet {
                 max_end_va,
                 MapType::Framed,
                 MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
-        // 映射 TrapContext，位于用户空间顶部跳板下，用户栈上，权限为 R/W
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(TRAP_CONTEXT),
-                VirtAddr(TRAMPOLINE),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W,
             ),
             None,
         );

@@ -1,35 +1,62 @@
 //! 进程管理器
 
-use alloc::{collections::vec_deque::VecDeque, sync::Arc};
+use alloc::{
+    collections::{btree_map::BTreeMap, vec_deque::VecDeque},
+    sync::Arc,
+};
 
-use crate::{sync::SyncRefCell, task::task::ProcessControlBlock};
+use crate::{
+    sync::SyncRefCell,
+    task::task::{ProcessControlBlock, ThreadControlBlock},
+};
 
 pub struct TaskManager {
-    ready_queue: VecDeque<Arc<ProcessControlBlock>>,
+    ready_queue: VecDeque<Arc<ThreadControlBlock>>,
+    stop_task: Option<Arc<ThreadControlBlock>>,
 }
 
 impl TaskManager {
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
+            stop_task: None,
         }
     }
-    pub fn add(&mut self, pcb: Arc<ProcessControlBlock>) {
+    pub fn add(&mut self, pcb: Arc<ThreadControlBlock>) {
         self.ready_queue.push_back(pcb);
     }
-    pub fn fetch(&mut self) -> Option<Arc<ProcessControlBlock>> {
+    pub fn fetch(&mut self) -> Option<Arc<ThreadControlBlock>> {
         self.ready_queue.pop_front()
+    }
+    pub fn add_stop(&mut self, task: Arc<ThreadControlBlock>) {
+        self.stop_task = Some(task);
     }
 }
 
 lazy_static::lazy_static! {
     pub static ref TASK_MANAGER: SyncRefCell<TaskManager> = unsafe { SyncRefCell::new(TaskManager::new()) };
+    pub static ref PID2PCB: SyncRefCell<BTreeMap<usize, Arc<ProcessControlBlock>>> = unsafe { SyncRefCell::new(BTreeMap::new()) };
 }
 
-pub fn add_task(pcb: Arc<ProcessControlBlock>) {
+pub fn add_task(pcb: Arc<ThreadControlBlock>) {
     TASK_MANAGER.exclusive_access().add(pcb);
 }
 
-pub fn fetch_task() -> Option<Arc<ProcessControlBlock>> {
+pub fn fetch_task() -> Option<Arc<ThreadControlBlock>> {
     TASK_MANAGER.exclusive_access().fetch()
+}
+
+pub fn add_stopping_task(task: Arc<ThreadControlBlock>) {
+    TASK_MANAGER.exclusive_access().add_stop(task);
+}
+
+pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
+    PID2PCB.exclusive_access().insert(pid, process);
+}
+
+pub fn remove_from_pid2process(pid: usize) {
+    PID2PCB
+        .exclusive_access()
+        .remove(&pid)
+        .unwrap_or_else(|| panic!("找不到 PID 为 {} 的进程", pid));
 }
