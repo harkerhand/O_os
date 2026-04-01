@@ -60,6 +60,7 @@ impl ProcessControlBlock {
                     cond_list: Vec::new(),
                     heap_bottom,
                     program_brk: heap_bottom,
+                    cwd: String::from("/"),
                 })
             },
         });
@@ -175,6 +176,7 @@ impl ProcessControlBlock {
                     cond_list: Vec::new(),
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    cwd: parent_inner.cwd.clone(),
                 })
             },
         });
@@ -212,6 +214,7 @@ pub struct ProcessControlBlockInner {
     // my custom
     pub heap_bottom: usize,
     pub program_brk: usize,
+    pub cwd: String,
 }
 
 impl ProcessControlBlockInner {
@@ -281,9 +284,6 @@ pub struct ThreadControlBlockInner {
     pub task_cx: TaskContext,
     pub task_status: TaskStatus,
     pub exit_code: Option<i32>,
-
-    // my custom
-    pub cwd: String,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -328,7 +328,6 @@ impl ThreadControlBlock {
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
-                    cwd: String::from("/"),
                 })
             },
         }

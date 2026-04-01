@@ -33,7 +33,7 @@ impl Condvar {
 
     pub fn wait(&self, mutex: Arc<dyn Mutex>) {
         mutex.unlock();
-        let current_thread = current_task().unwrap();
+        let current_thread = current_task();
         {
             let mut inner = self.inner.exclusive_access();
             inner.wait_queue.push_back(current_thread.clone());

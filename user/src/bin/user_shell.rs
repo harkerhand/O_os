@@ -29,7 +29,7 @@ fn shell_prompt() -> String {
 fn resolve_exec_path(cmd: &str) -> String {
     if matches!(
         cmd,
-        "ls\0" | "mkdir\0" | "cat\0" | "touch\0" | "write_file\0"
+        "ls\0" | "mkdir\0" | "cat\0" | "touch\0" | "write_file\0" | "rm\0"
     ) {
         let mut s = String::from("/");
         s.push_str(cmd);

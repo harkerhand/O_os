@@ -7,15 +7,20 @@ use crate::fs::inode::{OpenFlags, chdir_path, open_file};
 use crate::mem::{UserBuffer, translated_ref, translated_refmut, translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
-    INITPROCESS, change_program_brk, current_process, current_task, current_user_token,
-    exit_current_and_run_next, suspend_current_and_run_next,
+    INITPROCESS, change_program_brk, current_process, current_user_token,
+    exit_current_and_run_next, suspend_current_and_run_next, try_current_task,
 };
 use crate::timer::get_time_ms;
 
 /// 系统调用：退出当前应用并运行下一个应用
 pub fn sys_exit(exit_code: i32) -> ! {
-    let pid = current_task().unwrap().process.upgrade().unwrap().getpid();
-    let tid = current_task()
+    let pid = try_current_task()
+        .unwrap()
+        .process
+        .upgrade()
+        .unwrap()
+        .getpid();
+    let tid = try_current_task()
         .unwrap()
         .inner_exclusive_access()
         .res
@@ -130,8 +135,8 @@ pub fn sys_getcwd(buf: *mut u8, len: usize) -> isize {
     if buf.is_null() || len == 0 {
         return -1;
     }
-    let task = current_task().unwrap();
-    let cwd = task.inner_exclusive_access().cwd.clone();
+    let process = current_process();
+    let cwd = process.inner_exclusive_access().cwd.clone();
     let bytes = cwd.as_bytes();
     if bytes.len() + 1 > len {
         return -1;
@@ -163,8 +168,8 @@ pub fn sys_chdir(path: *const u8) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
     if let Some(new_cwd) = chdir_path(path.as_str()) {
-        let task = current_task().unwrap();
-        task.inner_exclusive_access().cwd = new_cwd;
+        let process = current_process();
+        process.inner_exclusive_access().cwd = new_cwd;
         0
     } else {
         -1

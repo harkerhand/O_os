@@ -2,8 +2,9 @@
 use crate::drivers::block::BLOCK_DEVICE;
 use alloc::{string::String, sync::Arc, vec::Vec};
 use easy_fs::{EasyFileSystem, Inode};
+use log::debug;
 
-use crate::task::current_task;
+use crate::task::{current_process, try_current_process, try_current_task};
 use crate::{fs::File, sync::SyncRefCell};
 
 pub struct OSInode {
@@ -116,11 +117,9 @@ fn path_components(path: &str) -> Vec<&str> {
 }
 
 fn current_cwd() -> String {
-    if let Some(task) = current_task() {
-        task.inner_exclusive_access().cwd.clone()
-    } else {
-        String::from("/")
-    }
+    try_current_process()
+        .map(|process| process.inner_exclusive_access().cwd.clone())
+        .unwrap_or_else(|| String::from("/"))
 }
 
 fn normalize_path(cwd: &str, input: &str) -> String {

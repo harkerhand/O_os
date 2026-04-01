@@ -26,7 +26,7 @@ pub use task::*;
 
 /// 挂起当前任务，然后运行下一个任务
 pub fn suspend_current_and_run_next() {
-    let task = take_current_task().unwrap();
+    let task = take_current_task();
 
     let mut task_inner = task.inner_exclusive_access();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
@@ -39,7 +39,7 @@ pub fn suspend_current_and_run_next() {
 
 /// 退出当前任务，然后运行下一个任务
 pub fn exit_current_and_run_next(exit_code: i32) {
-    let thread = take_current_task().unwrap();
+    let thread = take_current_task();
     let mut thread_inner = thread.inner_exclusive_access();
     let process = thread.process.upgrade().unwrap();
     let tid = thread_inner.res.as_ref().unwrap().tid;
@@ -101,7 +101,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
 // 阻塞当前任务，然后运行下一个任务
 pub fn block_current_and_run_next() {
-    let thread = current_task().unwrap();
+    let thread = current_task();
     let mut thread_inner = thread.inner_exclusive_access();
     let task_cx_ptr = &mut thread_inner.task_cx as *mut TaskContext;
     thread_inner.task_status = TaskStatus::Blocked;

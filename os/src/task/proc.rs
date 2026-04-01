@@ -43,16 +43,24 @@ impl ProcessorManager {
     }
 }
 
-pub fn take_current_task() -> Option<Arc<ThreadControlBlock>> {
-    PROCESSOR.exclusive_access().take_current()
+pub fn take_current_task() -> Arc<ThreadControlBlock> {
+    PROCESSOR.exclusive_access().take_current().unwrap()
 }
 
-pub fn current_task() -> Option<Arc<ThreadControlBlock>> {
+pub fn current_task() -> Arc<ThreadControlBlock> {
+    try_current_task().unwrap()
+}
+
+pub fn try_current_task() -> Option<Arc<ThreadControlBlock>> {
     PROCESSOR.exclusive_access().current()
 }
 
 pub fn current_process() -> Arc<ProcessControlBlock> {
-    current_task().unwrap().process.upgrade().unwrap()
+    try_current_process().unwrap()
+}
+
+pub fn try_current_process() -> Option<Arc<ProcessControlBlock>> {
+    try_current_task().and_then(|task| task.process.upgrade())
 }
 
 pub fn current_user_token() -> usize {
@@ -60,14 +68,14 @@ pub fn current_user_token() -> usize {
 }
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
-    current_task()
+    try_current_task()
         .unwrap()
         .inner_exclusive_access()
         .get_trap_cx()
 }
 
 pub fn current_trap_cx_user_va() -> usize {
-    current_task()
+    try_current_task()
         .unwrap()
         .inner_exclusive_access()
         .res

@@ -1,13 +1,18 @@
 use crate::{
     mem::KERNEL_SPACE,
-    task::{ThreadControlBlock, add_task, current_task},
+    task::{ThreadControlBlock, add_task, current_task, try_current_task},
     trap::{TrapContext, trap_handler},
 };
 use alloc::sync::Arc;
 use log::debug;
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
-    let pid = current_task().unwrap().process.upgrade().unwrap().getpid();
-    let tid = current_task()
+    let pid = try_current_task()
+        .unwrap()
+        .process
+        .upgrade()
+        .unwrap()
+        .getpid();
+    let tid = try_current_task()
         .unwrap()
         .inner_exclusive_access()
         .res
@@ -15,7 +20,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
         .unwrap()
         .tid;
     debug!("创建线程: pid[{}] tid[{}]", pid, tid);
-    let task = current_task().unwrap();
+    let task = current_task();
     let process = task.process.upgrade().unwrap();
     // create a new thread
     let new_task = Arc::new(ThreadControlBlock::new(Arc::clone(&process), true));
@@ -43,8 +48,13 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     new_task_tid as isize
 }
 pub fn sys_gettid() -> isize {
-    let pid = current_task().unwrap().process.upgrade().unwrap().getpid();
-    let tid = current_task()
+    let pid = try_current_task()
+        .unwrap()
+        .process
+        .upgrade()
+        .unwrap()
+        .getpid();
+    let tid = try_current_task()
         .unwrap()
         .inner_exclusive_access()
         .res
@@ -61,9 +71,14 @@ pub fn sys_gettid() -> isize {
 /// thread has not exited yet, return -2
 /// otherwise, return thread's exit code
 pub fn sys_waittid(tid: usize) -> i32 {
-    let pid = current_task().unwrap().process.upgrade().unwrap().getpid();
+    let pid = try_current_task()
+        .unwrap()
+        .process
+        .upgrade()
+        .unwrap()
+        .getpid();
     debug!("等待线程退出: pid[{}] tid[{}]", pid, tid);
-    let task = current_task().unwrap();
+    let task = current_task();
     let process = task.process.upgrade().unwrap();
     let task_inner = task.inner_exclusive_access();
     let mut process_inner = process.inner_exclusive_access();

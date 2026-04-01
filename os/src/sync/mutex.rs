@@ -39,7 +39,7 @@ impl Mutex for MutexBlocking {
     fn lock(&self) {
         let mut inner = self.inner.exclusive_access();
         if inner.locked {
-            inner.wait_queue.push_back(current_task().unwrap());
+            inner.wait_queue.push_back(current_task());
             drop(inner);
             block_current_and_run_next();
         } else {

@@ -40,9 +40,7 @@ impl Semaphore {
         let mut inner = self.inner.exclusive_access();
         inner.count -= 1;
         if inner.count < 0 {
-            inner
-                .wait_queue
-                .push_back(crate::task::current_task().unwrap());
+            inner.wait_queue.push_back(crate::task::current_task());
             drop(inner);
             crate::task::block_current_and_run_next();
         }
