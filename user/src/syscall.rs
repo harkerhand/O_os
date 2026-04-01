@@ -27,9 +27,9 @@ const SYSCALL_MUTEX_UNLOCK: usize = 466;
 const SYSCALL_SEMAPHORE_CREATE: usize = 467;
 const SYSCALL_SEMAPHORE_UP: usize = 468;
 const SYSCALL_SEMAPHORE_DOWN: usize = 469;
-const SYSCALL_CONDVAR_CREATE: usize = 1030;
-const SYSCALL_CONDVAR_SIGNAL: usize = 1031;
-const SYSCALL_CONDVAR_WAIT: usize = 1032;
+const SYSCALL_CONDVAR_CREATE: usize = 471;
+const SYSCALL_CONDVAR_SIGNAL: usize = 472;
+const SYSCALL_CONDVAR_WAIT: usize = 473;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;

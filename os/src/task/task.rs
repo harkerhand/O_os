@@ -14,7 +14,7 @@ use crate::{
     error::{KernelError, KernelResult},
     fs::File,
     mem::{KERNEL_SPACE, MemorySet, PhysPageNum, VirtAddr, translated_refmut},
-    sync::{Mutex, Semaphore, SyncRefCell},
+    sync::{Condvar, Mutex, Semaphore, SyncRefCell},
     task::{
         TaskContext, add_task,
         manager::insert_into_pid2process,
@@ -57,6 +57,7 @@ impl ProcessControlBlock {
                     task_res_allocator: RecycleAllocator::new(),
                     sem_list: Vec::new(),
                     mutex_list: Vec::new(),
+                    cond_list: Vec::new(),
                     heap_bottom,
                     program_brk: heap_bottom,
                 })
@@ -171,6 +172,7 @@ impl ProcessControlBlock {
                     task_res_allocator: RecycleAllocator::new(),
                     mutex_list: Vec::new(),
                     sem_list: Vec::new(),
+                    cond_list: Vec::new(),
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                 })
@@ -206,6 +208,7 @@ pub struct ProcessControlBlockInner {
     pub task_res_allocator: RecycleAllocator,
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
     pub sem_list: Vec<Option<Arc<Semaphore>>>,
+    pub cond_list: Vec<Option<Arc<Condvar>>>,
     // my custom
     pub heap_bottom: usize,
     pub program_brk: usize,
