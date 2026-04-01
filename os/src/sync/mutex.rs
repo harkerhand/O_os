@@ -1,5 +1,3 @@
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use alloc::{collections::vec_deque::VecDeque, sync::Arc};
 
 use crate::{
@@ -60,25 +58,32 @@ impl Mutex for MutexBlocking {
 }
 
 pub struct MutexSpin {
-    locked: AtomicBool,
+    locked: SyncRefCell<bool>,
 }
 
 impl MutexSpin {
     pub fn new() -> Self {
         Self {
-            locked: AtomicBool::new(false),
+            locked: unsafe { SyncRefCell::new(false) },
         }
     }
 }
 
 impl Mutex for MutexSpin {
     fn lock(&self) {
-        while self.locked.swap(true, Ordering::Acquire) {
+        loop {
+            let mut locked = self.locked.exclusive_access();
+            if !*locked {
+                *locked = true;
+                break;
+            }
+            drop(locked);
             suspend_current_and_run_next();
         }
     }
 
     fn unlock(&self) {
-        self.locked.store(false, Ordering::Release);
+        let mut locked = self.locked.exclusive_access();
+        *locked = false;
     }
 }
