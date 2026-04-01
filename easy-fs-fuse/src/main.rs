@@ -40,7 +40,6 @@ struct Cli {
 
 fn easy_fs_pack() -> std::io::Result<()> {
     let cli = Cli::parse();
-    println!("src_path = {}\ntarget_path = {}", cli.source, cli.target);
     let block_file = Arc::new(BlockFile(Mutex::new({
         let f = OpenOptions::new()
             .read(true)
@@ -53,24 +52,30 @@ fn easy_fs_pack() -> std::io::Result<()> {
     // 16MiB, at most 4095 files
     let efs = EasyFileSystem::create(block_file, 16 * 2048, 1);
     let root_inode = Arc::new(EasyFileSystem::root_inode(&efs));
-    let apps: Vec<_> = read_dir(cli.source)
-        .unwrap()
-        .into_iter()
-        .map(|dir_entry| {
-            let mut name_with_ext = dir_entry.unwrap().file_name().into_string().unwrap();
-            name_with_ext.drain(name_with_ext.find('.').unwrap()..name_with_ext.len());
-            name_with_ext
-        })
-        .collect();
-    for app in apps {
-        // load app data from host file system
-        let mut host_file = File::open(format!("{}{}", cli.target, app)).unwrap();
-        let mut all_data: Vec<u8> = Vec::new();
-        host_file.read_to_end(&mut all_data).unwrap();
-        // create a file in easy-fs
-        let inode = root_inode.create(app.as_str()).unwrap();
-        // write data to easy-fs
-        inode.write_at(0, all_data.as_slice());
+    let test_node = root_inode.create_dir("test").unwrap();
+
+    let entries = read_dir(cli.source)?;
+    for dir_entry in entries {
+        let path = dir_entry?.path();
+        if path.is_file() {
+            let mut file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+            if let Some(pos) = file_name.find('.') {
+                file_name.drain(pos..file_name.len());
+            }
+            let bin_path = cli.target.clone() + file_name.as_str();
+            let mut host_file = File::open(bin_path)?;
+            let mut all_data: Vec<u8> = Vec::new();
+            host_file.read_to_end(&mut all_data)?;
+
+            let target_inode = if file_name.starts_with("test_") {
+                let file_name = file_name.strip_prefix("test_").unwrap().to_string();
+                test_node.create(file_name.as_str()).unwrap()
+            } else {
+                root_inode.create(file_name.as_str()).unwrap()
+            };
+            target_inode.write_at(0, all_data.as_slice());
+        }
     }
+
     Ok(())
 }
