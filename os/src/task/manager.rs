@@ -7,7 +7,7 @@ use alloc::{
 
 use crate::{
     sync::SyncRefCell,
-    task::task::{ProcessControlBlock, ThreadControlBlock},
+    task::task::{ProcessControlBlock, TaskStatus, ThreadControlBlock},
 };
 
 pub struct TaskManager {
@@ -44,6 +44,13 @@ pub fn add_task(pcb: Arc<ThreadControlBlock>) {
 
 pub fn fetch_task() -> Option<Arc<ThreadControlBlock>> {
     TASK_MANAGER.exclusive_access().fetch()
+}
+
+pub fn wakeup_task(task: Arc<ThreadControlBlock>) {
+    let mut inner = task.inner_exclusive_access();
+    inner.task_status = TaskStatus::Ready;
+    drop(inner);
+    add_task(task);
 }
 
 pub fn add_stopping_task(task: Arc<ThreadControlBlock>) {

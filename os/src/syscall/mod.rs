@@ -24,19 +24,24 @@ const SYSCALL_MUNMAP: usize = 215;
 const SYSCALL_FORK: usize = 220;
 const SYSCALL_EXEC: usize = 221;
 const SYSCALL_WAITPID: usize = 260;
-pub const SYSCALL_GETTID: usize = 178;
-pub const SYSCALL_THREAD_CREATE: usize = 460;
-pub const SYSCALL_WAITTID: usize = 462;
+const SYSCALL_GETTID: usize = 178;
+const SYSCALL_THREAD_CREATE: usize = 460;
+const SYSCALL_WAITTID: usize = 462;
+const SYSCALL_MUTEX_CREATE: usize = 463;
+const SYSCALL_MUTEX_LOCK: usize = 464;
+const SYSCALL_MUTEX_UNLOCK: usize = 466;
 
 mod fs;
 mod mem;
 mod process;
+mod sync;
 mod thread;
 
 use fs::*;
 use log::trace;
 use mem::*;
 use process::*;
+use sync::*;
 use thread::*;
 
 /// 系统调用的入口函数
@@ -64,6 +69,9 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_THREAD_CREATE => sys_thread_create(args[0], args[1]),
         SYSCALL_WAITTID => sys_waittid(args[0]) as isize,
         SYSCALL_GETTID => sys_gettid(),
+        SYSCALL_MUTEX_CREATE => sys_mutex_create(args[0] != 0),
+        SYSCALL_MUTEX_LOCK => sys_mutex_lock(args[0]),
+        SYSCALL_MUTEX_UNLOCK => sys_mutex_unlock(args[0]),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

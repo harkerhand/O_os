@@ -99,6 +99,16 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     panic!("unreachable in exit_current_and_run_next!");
 }
 
+// 阻塞当前任务，然后运行下一个任务
+pub fn block_current_and_run_next() {
+    let thread = current_task().unwrap();
+    let mut thread_inner = thread.inner_exclusive_access();
+    let task_cx_ptr = &mut thread_inner.task_cx as *mut TaskContext;
+    thread_inner.task_status = TaskStatus::Blocked;
+    drop(thread_inner);
+    schedule(task_cx_ptr);
+}
+
 lazy_static::lazy_static! {
     pub static ref INITPROCESS: Arc<ProcessControlBlock> = {
         let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
