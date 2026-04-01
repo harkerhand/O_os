@@ -7,7 +7,7 @@ pub mod console;
 mod heap_alloc;
 mod lang_items;
 mod logging;
-mod sync;
+pub mod sync;
 mod syscall;
 
 extern crate alloc;
