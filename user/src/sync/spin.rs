@@ -24,21 +24,9 @@ impl<T> SpinLock<T> {
     }
 
     pub fn lock(&self) -> SpinLockGuard<'_, T> {
-        // 自旋：尝试将 false 改为 true
-        // Acquire 内存顺序确保锁之后的内存操作不会重排到锁之前
-        let mut retry_count = 100;
-        while self
-            .locked
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            retry_count -= 1;
-            if retry_count == 0 {
-                sys_yield(); // 让出 CPU，避免忙等待过热
-                retry_count = 100;
-            } else {
-                core::hint::spin_loop(); // 提示 CPU 这是一个自旋等待
-            }
+        while self.locked.swap(true, Ordering::Acquire) {
+            // 如果已经被锁定，主动让出 CPU，避免忙等待
+            sys_yield();
         }
         SpinLockGuard { spin_lock: self }
     }
