@@ -1,4 +1,4 @@
-use crate::sync::{Condvar, MutexBlocking, MutexSpin, Semaphore};
+use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
 use crate::task::current_process;
 use alloc::sync::Arc;
 /// mutex create syscall
@@ -6,6 +6,11 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
 
+    let mutex: Arc<dyn Mutex> = if !blocking {
+        Arc::new(MutexSpin::new())
+    } else {
+        Arc::new(MutexBlocking::new())
+    };
     if let Some(id) = process_inner
         .mutex_list
         .iter()
@@ -13,16 +18,10 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .find(|(_, item)| item.is_none())
         .map(|(id, _)| id)
     {
-        process_inner.mutex_list[id] = if !blocking {
-            Some(Arc::new(MutexSpin::new()))
-        } else {
-            Some(Arc::new(MutexBlocking::new()))
-        };
+        process_inner.mutex_list[id] = Some(mutex);
         id as isize
     } else {
-        process_inner
-            .mutex_list
-            .push(Some(Arc::new(MutexSpin::new())));
+        process_inner.mutex_list.push(Some(mutex));
         process_inner.mutex_list.len() as isize - 1
     }
 }
