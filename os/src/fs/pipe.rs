@@ -1,9 +1,15 @@
 //! 管道
 
-use alloc::sync::{Arc, Weak};
+use alloc::{
+    collections::vec_deque::VecDeque,
+    sync::{Arc, Weak},
+};
 use spin::Mutex;
 
-use crate::{fs::File, task::suspend_current_and_run_next};
+use crate::{
+    fs::File,
+    task::{ThreadControlBlock, current_task, mark_current_blocked, schedule, wakeup_task},
+};
 
 pub struct Pipe {
     readable: bool,
@@ -32,8 +38,11 @@ impl File for Pipe {
                 if ring_buffer.all_write_ends_closed() {
                     return already_read;
                 }
+                let task = current_task();
+                let task_cx_ptr = mark_current_blocked();
+                ring_buffer.read_wait_queue.push_back(task);
                 drop(ring_buffer);
-                suspend_current_and_run_next();
+                schedule(task_cx_ptr);
                 continue;
             }
             for _ in 0..loop_read {
@@ -43,12 +52,15 @@ impl File for Pipe {
                     }
                     already_read += 1;
                     if already_read == want_to_read {
+                        ring_buffer.wake_one_writer();
                         return want_to_read;
                     }
                 } else {
+                    ring_buffer.wake_one_writer();
                     return already_read;
                 }
             }
+            ring_buffer.wake_one_writer();
         }
     }
 
@@ -64,22 +76,27 @@ impl File for Pipe {
             }
             let loop_write = ring_buffer.available_write();
             if loop_write == 0 {
+                let task = current_task();
+                let task_cx_ptr = mark_current_blocked();
+                ring_buffer.write_wait_queue.push_back(task);
                 drop(ring_buffer);
-                suspend_current_and_run_next();
+                schedule(task_cx_ptr);
                 continue;
             }
-            // write at most loop_write bytes
             for _ in 0..loop_write {
                 if let Some(byte_ref) = buf_iter.next() {
                     ring_buffer.write_byte(unsafe { *byte_ref });
                     already_write += 1;
                     if already_write == want_to_write {
+                        ring_buffer.wake_one_reader();
                         return want_to_write;
                     }
                 } else {
+                    ring_buffer.wake_one_reader();
                     return already_write;
                 }
             }
+            ring_buffer.wake_one_reader();
         }
     }
 }
@@ -91,6 +108,8 @@ pub struct PipeRingBuffer {
     head: usize,
     tail: usize,
     count: usize,
+    read_wait_queue: VecDeque<Arc<ThreadControlBlock>>,
+    write_wait_queue: VecDeque<Arc<ThreadControlBlock>>,
     read_end: Option<Weak<Pipe>>,
     write_end: Option<Weak<Pipe>>,
 }
@@ -102,6 +121,8 @@ impl PipeRingBuffer {
             head: 0,
             tail: 0,
             count: 0,
+            read_wait_queue: VecDeque::new(),
+            write_wait_queue: VecDeque::new(),
             read_end: None,
             write_end: None,
         }
@@ -122,18 +143,44 @@ impl PipeRingBuffer {
         self.count -= 1;
         byte
     }
+
     pub fn available_read(&self) -> usize {
         self.count
     }
+
     pub fn write_byte(&mut self, byte: u8) {
         assert!(self.count < RING_BUFFER_SIZE);
         self.arr[self.tail] = byte;
         self.tail = (self.tail + 1) % RING_BUFFER_SIZE;
         self.count += 1;
     }
+
     pub fn available_write(&self) -> usize {
         RING_BUFFER_SIZE - self.count
     }
+
+    fn wake_all(wait_queue: &mut VecDeque<Arc<ThreadControlBlock>>) {
+        while let Some(task) = wait_queue.pop_front() {
+            wakeup_task(task);
+        }
+    }
+
+    pub fn wake_one_reader(&mut self) {
+        Self::wake_all(&mut self.read_wait_queue);
+    }
+
+    pub fn wake_one_writer(&mut self) {
+        Self::wake_all(&mut self.write_wait_queue);
+    }
+
+    pub fn wake_all_readers(&mut self) {
+        Self::wake_all(&mut self.read_wait_queue);
+    }
+
+    pub fn wake_all_writers(&mut self) {
+        Self::wake_all(&mut self.write_wait_queue);
+    }
+
     pub fn all_write_ends_closed(&self) -> bool {
         if let Some(write_end) = &self.write_end {
             write_end.upgrade().is_none()
@@ -169,6 +216,18 @@ impl Pipe {
     }
 }
 
+impl Drop for Pipe {
+    fn drop(&mut self) {
+        let mut ring_buffer = self.buffer.lock();
+        if self.readable {
+            ring_buffer.wake_all_writers();
+        }
+        if self.writeable {
+            ring_buffer.wake_all_readers();
+        }
+    }
+}
+
 /// 创建一个管道，返回读写两端的 Pipe 对象
 pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
     let buffer = Arc::new(Mutex::new(PipeRingBuffer::new()));
@@ -177,5 +236,6 @@ pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
     let mut ring = buffer.lock();
     ring.set_read_end(&read_end);
     ring.set_write_end(&write_end);
+    drop(ring);
     (read_end, write_end)
 }

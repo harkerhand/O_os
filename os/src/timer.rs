@@ -1,6 +1,7 @@
 //! RISC-V 时间相关
 
 use crate::config::CLOCK_FREQ;
+use crate::fs::stdio::poll_stdin;
 use crate::sbi::set_timer;
 use crate::sync::SyncRefCell;
 use crate::task::{ThreadControlBlock, wakeup_task};
@@ -77,6 +78,7 @@ pub fn remove_timer(task: Arc<ThreadControlBlock>) {
 }
 
 pub fn check_timer() {
+    poll_stdin();
     let current_ms = get_time_ms();
     let mut timers = TIMERS.exclusive_access();
     while let Some(timer) = timers.peek() {
