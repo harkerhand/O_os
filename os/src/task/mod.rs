@@ -10,7 +10,7 @@ mod task;
 use crate::fs::inode::{OpenFlags, open_file};
 use crate::task::manager::{add_stopping_task, remove_from_pid2process};
 use crate::task::pid::IDLE_PID;
-use crate::task::proc::{schedule, take_current_task};
+use crate::task::proc::take_current_task;
 use crate::task::task::ProcessControlBlock;
 use crate::timer::remove_timer;
 use alloc::sync::Arc;
@@ -35,7 +35,7 @@ pub fn suspend_current_and_run_next() {
     drop(task_inner);
 
     add_task(task);
-    schedule(task_cx_ptr);
+    proc::schedule(task_cx_ptr);
 }
 
 /// 退出当前任务，然后运行下一个任务
@@ -97,18 +97,22 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
     drop(process);
     let mut _unused = TaskContext::zero_init();
-    schedule(&mut _unused as *mut TaskContext);
+    proc::schedule(&mut _unused as *mut TaskContext);
     panic!("unreachable in exit_current_and_run_next!");
 }
 
 // 阻塞当前任务，然后运行下一个任务
 pub fn block_current_and_run_next() {
-    let thread = current_task();
+    let task_cx_ptr = mark_current_blocked();
+    proc::schedule(task_cx_ptr);
+}
+
+pub fn mark_current_blocked() -> *mut TaskContext {
+    let thread = proc::current_task();
     let mut thread_inner = thread.inner_exclusive_access();
     let task_cx_ptr = &mut thread_inner.task_cx as *mut TaskContext;
     thread_inner.task_status = TaskStatus::Blocked;
-    drop(thread_inner);
-    schedule(task_cx_ptr);
+    task_cx_ptr
 }
 
 lazy_static::lazy_static! {

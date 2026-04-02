@@ -2,7 +2,7 @@ use alloc::{collections::vec_deque::VecDeque, sync::Arc};
 
 use crate::{
     sync::{Mutex, SyncRefCell},
-    task::{ThreadControlBlock, block_current_and_run_next, current_task, wakeup_task},
+    task::{ThreadControlBlock, current_task, mark_current_blocked, schedule, wakeup_task},
 };
 
 pub struct Condvar {
@@ -32,14 +32,14 @@ impl Condvar {
     }
 
     pub fn wait(&self, mutex: Arc<dyn Mutex>) {
-        mutex.unlock();
         let current_thread = current_task();
-        {
-            let mut inner = self.inner.exclusive_access();
-            inner.wait_queue.push_back(current_thread.clone());
-        }
+        let task_cx_ptr = mark_current_blocked();
+        let mut inner = self.inner.exclusive_access();
+        inner.wait_queue.push_back(current_thread.clone());
+        mutex.unlock();
+        drop(inner);
         drop(current_thread);
-        block_current_and_run_next();
+        schedule(task_cx_ptr);
         mutex.lock();
     }
 }

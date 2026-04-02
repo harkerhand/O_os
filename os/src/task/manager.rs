@@ -3,6 +3,7 @@
 use alloc::{
     collections::{btree_map::BTreeMap, vec_deque::VecDeque},
     sync::Arc,
+    vec::Vec,
 };
 
 use crate::{
@@ -12,24 +13,27 @@ use crate::{
 
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<ThreadControlBlock>>,
-    stop_task: Option<Arc<ThreadControlBlock>>,
+    stopped_tasks: Vec<Arc<ThreadControlBlock>>,
 }
 
 impl TaskManager {
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
-            stop_task: None,
+            stopped_tasks: Vec::new(),
         }
     }
     pub fn add(&mut self, pcb: Arc<ThreadControlBlock>) {
         self.ready_queue.push_back(pcb);
     }
     pub fn fetch(&mut self) -> Option<Arc<ThreadControlBlock>> {
+        // Exited tasks must stay alive until we are back on the idle context.
+        // Once the scheduler loop runs again, dropping them is safe.
+        self.stopped_tasks.clear();
         self.ready_queue.pop_front()
     }
     pub fn add_stop(&mut self, task: Arc<ThreadControlBlock>) {
-        self.stop_task = Some(task);
+        self.stopped_tasks.push(task);
     }
     pub fn remove(&mut self, task: Arc<ThreadControlBlock>) {
         if let Some(id) = self.ready_queue.iter().position(|t| Arc::ptr_eq(t, &task)) {
@@ -53,6 +57,9 @@ pub fn fetch_task() -> Option<Arc<ThreadControlBlock>> {
 
 pub fn wakeup_task(task: Arc<ThreadControlBlock>) {
     let mut inner = task.inner_exclusive_access();
+    if inner.task_status != TaskStatus::Blocked {
+        return;
+    }
     inner.task_status = TaskStatus::Ready;
     drop(inner);
     add_task(task);

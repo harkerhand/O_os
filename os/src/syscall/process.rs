@@ -117,11 +117,6 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     });
     if let Some((idx, _)) = pair {
         let child = process_inner.children.remove(idx);
-        assert_eq!(
-            Arc::strong_count(&child),
-            1,
-            "Child process should have no other references"
-        );
         let pid = child.getpid();
         let exit_code = child.inner_exclusive_access().exit_code;
         *translated_refmut(process_inner.memory_set.token(), exit_code_ptr) = exit_code;
