@@ -278,6 +278,9 @@ impl MemorySet {
     pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
         let start_va = VirtAddr(start);
         let end_va = VirtAddr(end);
+        if start >= TRAMPOLINE || end > TRAMPOLINE || start >= end {
+            return -1;
+        }
         if self
             .areas
             .iter()

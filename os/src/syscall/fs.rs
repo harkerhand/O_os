@@ -13,7 +13,10 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
     let process = current_process();
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
+    let Some(flags) = OpenFlags::from_bits(flags) else {
+        return -1;
+    };
+    if let Some(inode) = open_file(path.as_str(), flags) {
         let mut inner = process.inner_exclusive_access();
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
@@ -46,7 +49,9 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         && let Some(file) = &current_tcb.fd_table[fd]
     {
         let file = file.clone();
-        assert!(file.writeable());
+        if !file.writeable() {
+            return -1;
+        }
         drop(current_tcb);
         file.write(UserBuffer::from_raw_parts(token, buf, len))
     } else {
@@ -62,7 +67,9 @@ pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> isize {
         && let Some(file) = &current_tcb.fd_table[fd]
     {
         let file = file.clone();
-        assert!(file.readable());
+        if !file.readable() {
+            return -1;
+        }
         drop(current_tcb);
         file.read(UserBuffer::from_raw_parts(token, buf, len))
     } else {
