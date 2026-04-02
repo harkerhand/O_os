@@ -12,6 +12,7 @@ use crate::task::manager::{add_stopping_task, remove_from_pid2process};
 use crate::task::pid::IDLE_PID;
 use crate::task::proc::{schedule, take_current_task};
 use crate::task::task::ProcessControlBlock;
+use crate::timer::remove_timer;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use log::info;
@@ -82,6 +83,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         let mut recycle_res = Vec::new();
         for thread in process_inner.tasks.iter().filter(|t| t.is_some()) {
             let thread = thread.as_ref().unwrap();
+            remove_inactive_task(thread.clone());
             let mut thread_inner = thread.inner_exclusive_access();
             if let Some(res) = thread_inner.res.take() {
                 recycle_res.push(res);
@@ -119,4 +121,9 @@ lazy_static::lazy_static! {
 
 pub fn add_initproc() {
     let _initproc = INITPROCESS.clone();
+}
+
+pub fn remove_inactive_task(task: Arc<ThreadControlBlock>) {
+    remove_task(task.clone());
+    remove_timer(task);
 }

@@ -216,9 +216,5 @@ pub fn condvar_wait(condvar_id: usize, mutex_id: usize) {
 }
 
 pub fn sleep_ms(ms: usize) {
-    let current_timer = get_time();
-    let wait_for = current_timer + (ms as isize);
-    while get_time() < wait_for {
-        yield_();
-    }
+    sys_sleep(ms);
 }

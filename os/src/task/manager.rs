@@ -31,6 +31,11 @@ impl TaskManager {
     pub fn add_stop(&mut self, task: Arc<ThreadControlBlock>) {
         self.stop_task = Some(task);
     }
+    pub fn remove(&mut self, task: Arc<ThreadControlBlock>) {
+        if let Some(id) = self.ready_queue.iter().position(|t| Arc::ptr_eq(t, &task)) {
+            self.ready_queue.remove(id);
+        }
+    }
 }
 
 lazy_static::lazy_static! {
@@ -51,6 +56,10 @@ pub fn wakeup_task(task: Arc<ThreadControlBlock>) {
     inner.task_status = TaskStatus::Ready;
     drop(inner);
     add_task(task);
+}
+
+pub fn remove_task(task: Arc<ThreadControlBlock>) {
+    TASK_MANAGER.exclusive_access().remove(task);
 }
 
 pub fn add_stopping_task(task: Arc<ThreadControlBlock>) {

@@ -11,7 +11,7 @@ use crate::{
         current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
-    timer::set_next_trigger,
+    timer::{check_timer, set_next_trigger},
 };
 use log::error;
 use riscv::{
@@ -91,6 +91,8 @@ pub fn trap_handler() -> ! {
                 Ok(Interrupt::SupervisorTimer) => {
                     // 重新设置下一次 timer interrupt
                     set_next_trigger();
+                    // 检查定时器
+                    check_timer();
                     // 切换到下一个任务
                     suspend_current_and_run_next();
                 }
