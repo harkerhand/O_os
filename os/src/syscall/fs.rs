@@ -94,20 +94,21 @@ pub fn sys_unlink(path: *const u8) -> isize {
 }
 
 pub fn sys_pipe(pipe: *mut usize) -> isize {
-    let process = current_process();
     let token = current_user_token();
-    let mut inner = process.inner_exclusive_access();
-    let (read_end, write_end) = crate::fs::pipe::make_pipe();
-    let read_fd = inner.alloc_fd();
-    inner.fd_table[read_fd] = Some(read_end);
-    let write_fd = inner.alloc_fd();
-    inner.fd_table[write_fd] = Some(write_end);
     let Some(read_fd_ptr) = try_translated_refmut(token, pipe) else {
         return -1;
     };
     let Some(write_fd_ptr) = try_translated_refmut(token, unsafe { pipe.add(1) }) else {
         return -1;
     };
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let (read_end, write_end) = crate::fs::pipe::make_pipe();
+    let read_fd = inner.alloc_fd();
+    inner.fd_table[read_fd] = Some(read_end);
+    let write_fd = inner.alloc_fd();
+    inner.fd_table[write_fd] = Some(write_end);
+
     *read_fd_ptr = read_fd;
     *write_fd_ptr = write_fd;
     info!("新建管道，读端 fd = {}, 写端 fd = {}", read_fd, write_fd);
