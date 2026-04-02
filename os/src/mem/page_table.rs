@@ -168,15 +168,19 @@ impl PageTable {
 }
 
 /// 将用户空间的虚拟地址转换为内核空间的物理地址，并返回一个可变字节切片的向量
-pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
+pub fn try_translated_byte_buffer(
+    token: usize,
+    ptr: *const u8,
+    len: usize,
+) -> Option<Vec<&'static mut [u8]>> {
     let page_table = PageTable::from_token(token);
     let mut start = ptr as usize;
-    let end = start + len;
+    let end = start.checked_add(len)?;
     let mut v = Vec::new();
     while start < end {
         let start_va = VirtAddr(start);
         let mut vpn = start_va.floor();
-        let ppn = page_table.translate(vpn).unwrap().ppn();
+        let ppn = page_table.translate(vpn)?.ppn();
         vpn.step();
         let mut end_va: VirtAddr = vpn.into();
         end_va = end_va.min(VirtAddr(end));
@@ -187,7 +191,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         }
         start = end_va.0;
     }
-    v
+    Some(v)
 }
 
 pub struct UserBuffer {
@@ -198,8 +202,8 @@ impl UserBuffer {
     pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
         Self { buf: buffers }
     }
-    pub fn from_raw_parts(token: usize, ptr: *const u8, len: usize) -> Self {
-        Self::new(translated_byte_buffer(token, ptr, len))
+    pub fn try_from_raw_parts(token: usize, ptr: *const u8, len: usize) -> Option<Self> {
+        Some(Self::new(try_translated_byte_buffer(token, ptr, len)?))
     }
     pub fn len(&self) -> usize {
         self.buf.iter().map(|b| b.len()).sum()
@@ -242,12 +246,12 @@ impl Iterator for UserBufferIterator {
     }
 }
 
-pub fn translated_str(token: usize, ptr: *const u8) -> String {
+pub fn try_translated_str(token: usize, ptr: *const u8) -> Option<String> {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();
     let mut va = ptr as usize;
     loop {
-        let ch: u8 = *(page_table.translate_va(VirtAddr(va)).unwrap().get_mut());
+        let ch: u8 = *(page_table.translate_va(VirtAddr(va))?.get_mut());
         if ch == 0 {
             break;
         } else {
@@ -255,19 +259,23 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
             va += 1;
         }
     }
-    string
+    Some(string)
 }
 
 pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
-    let page_table = PageTable::from_token(token);
-    let va = ptr as usize;
-    page_table.translate_va(VirtAddr(va)).unwrap().get_mut()
+    try_translated_refmut(token, ptr).expect("translated_refmut failed")
 }
 
-pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
+pub fn try_translated_refmut<T>(token: usize, ptr: *mut T) -> Option<&'static mut T> {
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
-    page_table.translate_va(VirtAddr(va)).unwrap().get_ref()
+    Some(page_table.translate_va(VirtAddr(va))?.get_mut())
+}
+
+pub fn try_translated_ref<T>(token: usize, ptr: *const T) -> Option<&'static T> {
+    let page_table = PageTable::from_token(token);
+    let va = ptr as usize;
+    Some(page_table.translate_va(VirtAddr(va))?.get_ref())
 }
 pub fn kernel_va_to_pa(va: usize) -> usize {
     let va = VirtAddr(va);

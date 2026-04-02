@@ -10,7 +10,8 @@ use log::info;
 pub use mem_set::KERNEL_SPACE;
 pub use mem_set::MemorySet;
 pub use page_table::{
-    UserBuffer, kernel_va_to_pa, translated_ref, translated_refmut, translated_str,
+    UserBuffer, kernel_va_to_pa, translated_refmut, try_translated_ref, try_translated_refmut,
+    try_translated_str,
 };
 mod heap_allocator;
 

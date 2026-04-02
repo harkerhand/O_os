@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use log::{info, warn};
 
 use crate::fs::inode::{OpenFlags, chdir_path, open_file};
-use crate::mem::{UserBuffer, translated_ref, translated_refmut, translated_str};
+use crate::mem::{UserBuffer, try_translated_ref, try_translated_refmut, try_translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
     INITPROCESS, SignalFlags, change_program_brk, current_process, current_user_token,
@@ -75,15 +75,23 @@ pub fn sys_fork() -> isize {
 
 pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let token = current_user_token();
-    let path = translated_str(token, path);
+    let Some(path) = try_translated_str(token, path) else {
+        return -1;
+    };
     let mut args_vec = Vec::new();
     if !args.is_null() {
         loop {
-            let arg_ptr = *translated_ref(token, args);
+            let Some(arg_ptr_ref) = try_translated_ref(token, args) else {
+                return -1;
+            };
+            let arg_ptr = *arg_ptr_ref;
             if arg_ptr == 0 {
                 break;
             }
-            args_vec.push(translated_str(token, arg_ptr as *const u8));
+            let Some(arg) = try_translated_str(token, arg_ptr as *const u8) else {
+                return -1;
+            };
+            args_vec.push(arg);
             args = unsafe { args.add(1) };
         }
     }
@@ -119,7 +127,12 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         let child = process_inner.children.remove(idx);
         let pid = child.getpid();
         let exit_code = child.inner_exclusive_access().exit_code;
-        *translated_refmut(process_inner.memory_set.token(), exit_code_ptr) = exit_code;
+        let Some(exit_code_ref) =
+            try_translated_refmut(process_inner.memory_set.token(), exit_code_ptr)
+        else {
+            return -1;
+        };
+        *exit_code_ref = exit_code;
         pid as isize
     } else {
         -2
@@ -138,7 +151,9 @@ pub fn sys_getcwd(buf: *mut u8, len: usize) -> isize {
     }
 
     let token = current_user_token();
-    let user_buf = UserBuffer::from_raw_parts(token, buf as *const u8, len);
+    let Some(user_buf) = UserBuffer::try_from_raw_parts(token, buf as *const u8, len) else {
+        return -1;
+    };
     let mut idx = 0usize;
     for chunk in user_buf.buf {
         for byte in chunk.iter_mut() {
@@ -161,7 +176,9 @@ pub fn sys_chdir(path: *const u8) -> isize {
         return -1;
     }
     let token = current_user_token();
-    let path = translated_str(token, path);
+    let Some(path) = try_translated_str(token, path) else {
+        return -1;
+    };
     if let Some(new_cwd) = chdir_path(path.as_str()) {
         let process = current_process();
         process.inner_exclusive_access().cwd = new_cwd;

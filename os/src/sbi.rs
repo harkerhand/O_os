@@ -6,7 +6,6 @@ use crate::{
 };
 const SBI_CONSOLE_DBCN: usize = 0x4442434E; // "DBCN" in ASCII
 
-#[allow(dead_code)]
 /// SBI 调用返回值
 #[derive(Copy, Clone, Debug)]
 struct SbiRet {
@@ -127,7 +126,6 @@ pub fn shutdown() -> ! {
     system_reset(0, 0);
 }
 
-#[allow(dead_code)]
 /// 故障关机
 /// Type 0: Shutdown, Reason 1: System Failure
 pub fn panic_shutdown() -> ! {
