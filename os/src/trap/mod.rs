@@ -8,7 +8,8 @@ use crate::{
     config::TRAMPOLINE,
     syscall::syscall,
     task::{
-        current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
+        SignalFlags, check_signals_of_current, current_add_signal, current_trap_cx,
+        current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
     timer::{check_timer, set_next_trigger},
@@ -72,17 +73,18 @@ pub fn trap_handler() -> ! {
                 }
                 Ok(Exception::StoreFault)
                 | Ok(Exception::StorePageFault)
+                | Ok(Exception::InstructionFault)
+                | Ok(Exception::InstructionPageFault)
                 | Ok(Exception::LoadFault)
                 | Ok(Exception::LoadPageFault) => {
-                    error!("应用页错误，内核杀死了它。");
-                    exit_current_and_run_next(-2);
+                    current_add_signal(SignalFlags::SIGSEGV);
                 }
                 Ok(Exception::IllegalInstruction) => {
-                    error!("应用执行了非法指令，内核杀死了它。");
-                    exit_current_and_run_next(-3);
+                    current_add_signal(SignalFlags::SIGILL);
                 }
                 _ => {
                     error!("未知异常 {:?}, stval = {:#x}!", scause.cause(), stval);
+                    exit_current_and_run_next(-1);
                 }
             }
         }
@@ -101,6 +103,10 @@ pub fn trap_handler() -> ! {
                 }
             }
         }
+    }
+    if let Some((errno, errstr)) = check_signals_of_current() {
+        error!("进程收到信号: {} ({})", errstr, errno);
+        exit_current_and_run_next(errno);
     }
     trap_return();
 }

@@ -19,10 +19,12 @@ use log::info;
 use task::TaskStatus;
 mod manager;
 mod proc;
+mod signal;
 
 pub use context::TaskContext;
 pub use manager::*;
 pub use proc::*;
+pub use signal::*;
 pub use task::*;
 
 /// 挂起当前任务，然后运行下一个任务
@@ -125,6 +127,19 @@ lazy_static::lazy_static! {
 
 pub fn add_initproc() {
     let _initproc = INITPROCESS.clone();
+}
+
+pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
+    let process = current_process();
+    let process_inner = process.inner_exclusive_access();
+    process_inner.signals.check_error()
+}
+
+/// Add signal to the current task
+pub fn current_add_signal(signal: SignalFlags) {
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.signals |= signal;
 }
 
 pub fn remove_inactive_task(task: Arc<ThreadControlBlock>) {

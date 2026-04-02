@@ -73,6 +73,10 @@ pub fn add_stopping_task(task: Arc<ThreadControlBlock>) {
     TASK_MANAGER.exclusive_access().add_stop(task);
 }
 
+pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
+    PID2PCB.exclusive_access().get(&pid).cloned()
+}
+
 pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
     PID2PCB.exclusive_access().insert(pid, process);
 }

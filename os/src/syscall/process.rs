@@ -7,8 +7,8 @@ use crate::fs::inode::{OpenFlags, chdir_path, open_file};
 use crate::mem::{UserBuffer, translated_ref, translated_refmut, translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
-    INITPROCESS, change_program_brk, current_process, current_user_token,
-    exit_current_and_run_next, suspend_current_and_run_next, try_current_task,
+    INITPROCESS, SignalFlags, change_program_brk, current_process, current_user_token,
+    exit_current_and_run_next, pid2process, suspend_current_and_run_next, try_current_task,
 };
 use crate::timer::get_time_ms;
 
@@ -165,6 +165,17 @@ pub fn sys_chdir(path: *const u8) -> isize {
     if let Some(new_cwd) = chdir_path(path.as_str()) {
         let process = current_process();
         process.inner_exclusive_access().cwd = new_cwd;
+        0
+    } else {
+        -1
+    }
+}
+
+pub fn sys_kill(pid: usize, signal: u32) -> isize {
+    if let Some(process) = pid2process(pid)
+        && let Some(flag) = SignalFlags::from_bits(signal)
+    {
+        process.inner_exclusive_access().signals |= flag;
         0
     } else {
         -1

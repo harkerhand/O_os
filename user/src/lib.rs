@@ -218,3 +218,22 @@ pub fn condvar_wait(condvar_id: usize, mutex_id: usize) {
 pub fn sleep_ms(ms: usize) {
     sys_sleep(ms);
 }
+
+bitflags::bitflags! {
+    pub struct SignalFlags: u32 {
+        /// Interrupt 中断信号
+        const SIGINT = 1 << 2;
+        /// Illegal Instruction 非法指令信号
+        const SIGILL = 1 << 4;
+        /// Abort 进程异常终止信号
+        const SIGABRT = 1 << 6;
+        /// Floating Point Exception 浮点异常信号
+        const SIGFPE = 1 << 8;
+        /// Segmentation Fault 内存访问错误信号
+        const SIGSEGV = 1 << 11;
+    }
+}
+
+pub fn kill(pid: usize, signal: SignalFlags) -> isize {
+    sys_kill(pid, signal.bits())
+}
