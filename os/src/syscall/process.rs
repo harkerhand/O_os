@@ -7,26 +7,20 @@ use crate::fs::inode::{OpenFlags, chdir_path, open_file};
 use crate::mem::{UserBuffer, try_translated_ref, try_translated_refmut, try_translated_str};
 use crate::sbi::shutdown;
 use crate::task::{
-    INITPROCESS, SignalFlags, change_program_brk, current_process, current_user_token,
-    exit_current_and_run_next, pid2process, suspend_current_and_run_next, try_current_task,
+    INITPROCESS, SignalFlags, change_program_brk, current_process, current_task,
+    current_user_token, exit_current_and_run_next, pid2process, suspend_current_and_run_next,
 };
 use crate::timer::get_time_ms;
 
 /// 系统调用：退出当前应用并运行下一个应用
 pub fn sys_exit(exit_code: i32) -> ! {
-    let pid = try_current_task()
-        .unwrap()
-        .process
-        .upgrade()
-        .unwrap()
-        .getpid();
-    let tid = try_current_task()
-        .unwrap()
+    let pid = current_process().getpid();
+    let tid = current_task()
         .inner_exclusive_access()
         .res
         .as_ref()
-        .unwrap()
-        .tid;
+        .map(|res| res.tid)
+        .unwrap_or(usize::MAX);
     info!(
         "退出线程: pid[{}] tid[{}] exit_code[{}]",
         pid, tid, exit_code
@@ -67,7 +61,14 @@ pub fn sys_fork() -> isize {
     let new_process = current_process.fork();
     let new_pid = new_process.pid.0;
     let new_process_inner = new_process.inner_exclusive_access();
-    let thread = new_process_inner.tasks[0].as_ref().unwrap();
+    let Some(thread) = new_process_inner
+        .tasks
+        .first()
+        .and_then(|thread| thread.as_ref())
+    else {
+        warn!("fork 后子进程缺少主线程");
+        return -1;
+    };
     let trap_cx = thread.inner_exclusive_access().get_trap_cx();
     trap_cx.x[10] = 0; // 子进程 fork 的返回值为 0
     new_pid as isize

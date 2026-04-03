@@ -44,11 +44,14 @@ impl ProcessorManager {
 }
 
 pub fn take_current_task() -> Arc<ThreadControlBlock> {
-    PROCESSOR.exclusive_access().take_current().unwrap()
+    PROCESSOR
+        .exclusive_access()
+        .take_current()
+        .expect("no current task to take")
 }
 
 pub fn current_task() -> Arc<ThreadControlBlock> {
-    try_current_task().unwrap()
+    try_current_task().expect("no current task")
 }
 
 pub fn try_current_task() -> Option<Arc<ThreadControlBlock>> {
@@ -56,7 +59,7 @@ pub fn try_current_task() -> Option<Arc<ThreadControlBlock>> {
 }
 
 pub fn current_process() -> Arc<ProcessControlBlock> {
-    try_current_process().unwrap()
+    try_current_process().expect("no current process")
 }
 
 pub fn try_current_process() -> Option<Arc<ProcessControlBlock>> {
@@ -69,18 +72,18 @@ pub fn current_user_token() -> usize {
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
     try_current_task()
-        .unwrap()
+        .expect("no current task for trap context")
         .inner_exclusive_access()
         .get_trap_cx()
 }
 
 pub fn current_trap_cx_user_va() -> usize {
     try_current_task()
-        .unwrap()
+        .expect("no current task for trap context user va")
         .inner_exclusive_access()
         .res
         .as_ref()
-        .unwrap()
+        .expect("current task has no user resources")
         .trap_cx_user_va()
 }
 
@@ -114,8 +117,8 @@ pub fn run() {
     add_initproc();
     info!("开始调度");
     loop {
-        let mut processer_manager = PROCESSOR.exclusive_access();
         if let Some(task) = fetch_task() {
+            let mut processer_manager = PROCESSOR.exclusive_access();
             let idle_task_cx_ptr = processer_manager.get_idle_task_cx();
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
