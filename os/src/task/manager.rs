@@ -82,8 +82,7 @@ pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
 }
 
 pub fn remove_from_pid2process(pid: usize) {
-    PID2PCB
-        .exclusive_access()
-        .remove(&pid)
-        .unwrap_or_else(|| panic!("找不到 PID 为 {} 的进程", pid));
+    if PID2PCB.exclusive_access().remove(&pid).is_none() {
+        log::warn!("移除进程映射失败: 找不到 PID {}", pid);
+    }
 }

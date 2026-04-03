@@ -1,33 +1,33 @@
 use crate::{
     mem::KERNEL_SPACE,
-    task::{ThreadControlBlock, add_task, current_task, try_current_task},
+    task::{ThreadControlBlock, add_task, current_process, current_task},
     trap::{TrapContext, trap_handler},
 };
 use alloc::sync::Arc;
-use log::debug;
+use log::{debug, warn};
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
-    let pid = try_current_task()
-        .unwrap()
-        .process
-        .upgrade()
-        .unwrap()
-        .getpid();
-    let tid = try_current_task()
-        .unwrap()
+    let task = current_task();
+    let process = current_process();
+    let Some(tid) = task
         .inner_exclusive_access()
         .res
         .as_ref()
-        .unwrap()
-        .tid;
+        .map(|res| res.tid)
+    else {
+        warn!("线程创建失败: 当前线程资源缺失");
+        return -1;
+    };
+    let pid = process.getpid();
     debug!("创建线程: pid[{}] tid[{}]", pid, tid);
-    let task = current_task();
-    let process = task.process.upgrade().unwrap();
     // create a new thread
     let new_task = Arc::new(ThreadControlBlock::new(Arc::clone(&process), true));
     // add new task to scheduler
     add_task(Arc::clone(&new_task));
     let new_task_inner = new_task.inner_exclusive_access();
-    let new_task_res = new_task_inner.res.as_ref().unwrap();
+    let Some(new_task_res) = new_task_inner.res.as_ref() else {
+        warn!("线程创建失败: 新线程资源缺失");
+        return -1;
+    };
     let new_task_tid = new_task_res.tid;
     let mut process_inner = process.inner_exclusive_access();
     // add new thread to current process
@@ -48,19 +48,17 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     new_task_tid as isize
 }
 pub fn sys_gettid() -> isize {
-    let pid = try_current_task()
-        .unwrap()
-        .process
-        .upgrade()
-        .unwrap()
-        .getpid();
-    let tid = try_current_task()
-        .unwrap()
+    let task = current_task();
+    let process = current_process();
+    let Some(tid) = task
         .inner_exclusive_access()
         .res
         .as_ref()
-        .unwrap()
-        .tid;
+        .map(|res| res.tid)
+    else {
+        return -1;
+    };
+    let pid = process.getpid();
     debug!("获取线程 ID: pid[{}] tid[{}]", pid, tid);
     tid as isize
 }
@@ -71,27 +69,29 @@ pub fn sys_gettid() -> isize {
 /// thread has not exited yet, return -2
 /// otherwise, return thread's exit code
 pub fn sys_waittid(tid: usize) -> i32 {
-    let pid = try_current_task()
-        .unwrap()
-        .process
-        .upgrade()
-        .unwrap()
-        .getpid();
-    debug!("等待线程退出: pid[{}] tid[{}]", pid, tid);
     let task = current_task();
-    let process = task.process.upgrade().unwrap();
-    let task_inner = task.inner_exclusive_access();
+    let process = current_process();
+    let Some(current_tid) = task
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .map(|res| res.tid)
+    else {
+        warn!("等待线程退出失败: 当前线程资源缺失");
+        return -1;
+    };
+    let pid = process.getpid();
+    debug!("等待线程退出: pid[{}] tid[{}]", pid, tid);
     let mut process_inner = process.inner_exclusive_access();
     if tid >= process_inner.tasks.len() {
         return -1;
     }
     // a thread cannot wait for itself
-    if task_inner.res.as_ref().unwrap().tid == tid {
+    if current_tid == tid {
         return -1;
     }
     let mut exit_code: Option<i32> = None;
-    let waited_task = process_inner.tasks[tid].as_ref();
-    if let Some(waited_task) = waited_task {
+    if let Some(waited_task) = process_inner.tasks.get(tid).and_then(|task| task.as_ref()) {
         if let Some(waited_exit_code) = waited_task.inner_exclusive_access().exit_code {
             exit_code = Some(waited_exit_code);
         }
@@ -104,7 +104,6 @@ pub fn sys_waittid(tid: usize) -> i32 {
         // ThreadUserRes::drop 会再次借用 process.inner，若在锁内直接置 None 会触发二次借用 panic。
         let recycled_thread = process_inner.tasks[tid].take();
         drop(process_inner);
-        drop(task_inner);
         drop(recycled_thread);
         exit_code
     } else {
