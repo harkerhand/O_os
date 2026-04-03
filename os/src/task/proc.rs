@@ -91,15 +91,23 @@ pub fn change_program_brk(size: i32) -> KernelResult<usize> {
 }
 
 pub fn mmap_current(start: usize, end: usize, prot: usize) -> isize {
-    current_process()
+    match current_process()
         .inner_exclusive_access()
         .mmap(start, end, prot)
+    {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
 }
 
 pub fn munmap_current(start: usize, end: usize) -> isize {
-    current_process()
+    match current_process()
         .inner_exclusive_access()
         .munmap(start, end)
+    {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
 }
 
 pub fn run() {

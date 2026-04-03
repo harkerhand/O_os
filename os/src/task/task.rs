@@ -273,10 +273,10 @@ impl ProcessControlBlockInner {
             Err(e) => Err(e),
         }
     }
-    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
+    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> KernelResult<()> {
         self.memory_set.mmap(start, end, prot)
     }
-    pub fn munmap(&mut self, start: usize, end: usize) -> isize {
+    pub fn munmap(&mut self, start: usize, end: usize) -> KernelResult<()> {
         self.memory_set.munmap(start, end)
     }
 }

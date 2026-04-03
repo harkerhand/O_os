@@ -50,7 +50,9 @@ impl MemorySet {
         memory_set.map_trampoline();
         for area in &other.areas {
             let new_area = MapArea::from_another(area);
-            memory_set.push(new_area, None);
+            memory_set
+                .push(new_area, None)
+                .expect("failed to clone map area");
             for vpn in area.vpn_range {
                 let src_ppn = other.translate(vpn).unwrap().ppn();
                 let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
@@ -75,26 +77,29 @@ impl MemorySet {
         start_va: VirtAddr,
         end_va: VirtAddr,
         permission: MapPermission,
-    ) {
+    ) -> KernelResult<()> {
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
-        );
+        )
     }
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        map_area.map(&mut self.page_table);
+    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) -> KernelResult<()> {
+        map_area.map(&mut self.page_table)?;
         if let Some(data) = data {
-            map_area.copy_data(&self.page_table, data);
+            map_area.copy_data(&self.page_table, data)?;
         }
         self.areas.push(map_area);
+        Ok(())
     }
     /// 提醒 trampoline 不被 areas 收集
     fn map_trampoline(&mut self) {
-        self.page_table.map(
-            VirtAddr(TRAMPOLINE).into(),
-            PhysAddr(strampoline as *const () as usize).into(),
-            PTEFlags::R | PTEFlags::X,
-        );
+        self.page_table
+            .map(
+                VirtAddr(TRAMPOLINE).into(),
+                PhysAddr(strampoline as *const () as usize).into(),
+                PTEFlags::R | PTEFlags::X,
+            )
+            .expect("failed to map trampoline");
     }
     /// 创建内核空间的内存集，包含 trampoline 和 elf 中的各个段
     pub fn new_kernel() -> Self {
@@ -119,66 +124,78 @@ impl MemorySet {
             sbss_with_stack as *const () as usize, ebss as *const () as usize
         );
         debug!("mapping .text section");
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(stext as *const () as usize),
-                VirtAddr(etext as *const () as usize),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X,
-            ),
-            None,
-        );
-        debug!("mapping .rodata section");
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(srodata as *const () as usize),
-                VirtAddr(erodata as *const () as usize),
-                MapType::Identical,
-                MapPermission::R,
-            ),
-            None,
-        );
-        debug!("mapping .data section");
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(sdata as *const () as usize),
-                VirtAddr(edata as *const () as usize),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
-        debug!("mapping .bss section");
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(sbss_with_stack as *const () as usize),
-                VirtAddr(ebss as *const () as usize),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
-        debug!("mapping physical memory");
-        memory_set.push(
-            MapArea::new(
-                VirtAddr(ekernel as *const () as usize),
-                VirtAddr(MEMORY_END),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
-        debug!("mapping MMIO");
-        for pair in crate::config::MMIO {
-            memory_set.push(
+        memory_set
+            .push(
                 MapArea::new(
-                    VirtAddr(pair.0),
-                    VirtAddr(pair.0 + pair.1),
+                    VirtAddr(stext as *const () as usize),
+                    VirtAddr(etext as *const () as usize),
+                    MapType::Identical,
+                    MapPermission::R | MapPermission::X,
+                ),
+                None,
+            )
+            .expect("failed to map kernel text");
+        debug!("mapping .rodata section");
+        memory_set
+            .push(
+                MapArea::new(
+                    VirtAddr(srodata as *const () as usize),
+                    VirtAddr(erodata as *const () as usize),
+                    MapType::Identical,
+                    MapPermission::R,
+                ),
+                None,
+            )
+            .expect("failed to map kernel rodata");
+        debug!("mapping .data section");
+        memory_set
+            .push(
+                MapArea::new(
+                    VirtAddr(sdata as *const () as usize),
+                    VirtAddr(edata as *const () as usize),
                     MapType::Identical,
                     MapPermission::R | MapPermission::W,
                 ),
                 None,
-            );
+            )
+            .expect("failed to map kernel data");
+        debug!("mapping .bss section");
+        memory_set
+            .push(
+                MapArea::new(
+                    VirtAddr(sbss_with_stack as *const () as usize),
+                    VirtAddr(ebss as *const () as usize),
+                    MapType::Identical,
+                    MapPermission::R | MapPermission::W,
+                ),
+                None,
+            )
+            .expect("failed to map kernel bss");
+        debug!("mapping physical memory");
+        memory_set
+            .push(
+                MapArea::new(
+                    VirtAddr(ekernel as *const () as usize),
+                    VirtAddr(MEMORY_END),
+                    MapType::Identical,
+                    MapPermission::R | MapPermission::W,
+                ),
+                None,
+            )
+            .expect("failed to map physical memory");
+        debug!("mapping MMIO");
+        for pair in crate::config::MMIO {
+            memory_set
+                .push(
+                    MapArea::new(
+                        VirtAddr(pair.0),
+                        VirtAddr(pair.0 + pair.1),
+                        MapType::Identical,
+                        MapPermission::R | MapPermission::W,
+                    ),
+                    None,
+                )
+                .expect("failed to map MMIO");
         }
         memory_set
     }
@@ -214,23 +231,30 @@ impl MemorySet {
                 }
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
                 max_end_vpn = map_area.vpn_range.get_end();
-                memory_set.push(
-                    map_area,
-                    Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
-                );
+                memory_set
+                    .push(
+                        map_area,
+                        Some(
+                            &elf.input
+                                [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
+                        ),
+                    )
+                    .expect("failed to map ELF segment");
             }
         }
         let max_end_va: VirtAddr = max_end_vpn.into();
         // 映射堆，位于用户空间底部的elf段之后，向上生长
-        memory_set.push(
-            MapArea::new(
-                max_end_va,
-                max_end_va,
-                MapType::Framed,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
+        memory_set
+            .push(
+                MapArea::new(
+                    max_end_va,
+                    max_end_va,
+                    MapType::Framed,
+                    MapPermission::R | MapPermission::W | MapPermission::U,
+                ),
+                None,
+            )
+            .expect("failed to map user heap");
         info!(
             "内存映射完成，用户堆底地址 = {:#x}, 入口点 = {:#x}",
             max_end_va.0,
@@ -275,28 +299,30 @@ impl MemorySet {
             Err(KernelError::AppendVirtAddrNotFound)
         }
     }
-    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
+    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> KernelResult<()> {
         let start_va = VirtAddr(start);
         let end_va = VirtAddr(end);
         if start >= TRAMPOLINE || end > TRAMPOLINE || start >= end {
-            return -1;
+            return Err(KernelError::InvalidMapRange);
         }
         if self
             .areas
             .iter()
             .any(|area| area.is_overlap(start_va, end_va))
         {
-            return -1;
+            return Err(KernelError::MapAreaOverlap);
         }
-        let permission = MapPermission::from_bits(prot as u8).unwrap() | MapPermission::U;
-        self.insert_framed_area(start_va, end_va, permission);
-        0
+        let permission = MapPermission::from_bits(prot as u8)
+            .ok_or(KernelError::InvalidMapPermission)?
+            | MapPermission::U;
+        self.insert_framed_area(start_va, end_va, permission)
     }
-    pub fn munmap(&mut self, start: usize, end: usize) -> isize {
+    pub fn munmap(&mut self, start: usize, end: usize) -> KernelResult<()> {
         let start_va = VirtAddr(start);
         let end_va = VirtAddr(end);
         let start_vpn = start_va.floor();
         let end_vpn = end_va.ceil();
+        let mut unmapped_any = false;
         loop {
             let mut target_idx = None;
             for (i, area) in self.areas.iter().enumerate() {
@@ -306,6 +332,7 @@ impl MemorySet {
                 }
             }
             if let Some(idx) = target_idx {
+                unmapped_any = true;
                 let mut area = self.areas.remove(idx);
 
                 // 1. 先把用户请求的这段 [start_vpn, end_vpn) 给 unmap 掉（物理回收）
@@ -314,7 +341,7 @@ impl MemorySet {
                 let unmap_end = end_vpn.min(area.vpn_range.get_end());
 
                 for vpn in VPNRange::new(unmap_start, unmap_end) {
-                    area.unmap_one(&mut self.page_table, vpn);
+                    area.unmap_one(&mut self.page_table, vpn)?;
                 }
 
                 // 2. 逻辑切分：检查卸载后，原来的 area 是否还有“剩余”部分
@@ -370,7 +397,11 @@ impl MemorySet {
                 break;
             }
         }
-        0
+        if unmapped_any {
+            Ok(())
+        } else {
+            Err(KernelError::MunmapAreaNotFound)
+        }
     }
 }
 
@@ -418,20 +449,21 @@ impl MapArea {
                 self.data_frames.insert(vpn, frame);
             }
         }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
-        page_table.map(vpn, ppn, pte_flags);
-        Ok(())
+        let pte_flags =
+            PTEFlags::from_bits(self.map_perm.bits()).ok_or(KernelError::InvalidPteFlags)?;
+        page_table.map(vpn, ppn, pte_flags)
     }
-    pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) -> KernelResult<()> {
         if self.map_type == MapType::Framed {
             self.data_frames.remove(&vpn);
         }
-        page_table.unmap(vpn);
+        page_table.unmap(vpn)
     }
-    pub fn map(&mut self, page_table: &mut PageTable) {
+    pub fn map(&mut self, page_table: &mut PageTable) -> KernelResult<()> {
         for vpn in self.vpn_range {
-            self.map_one(page_table, vpn).unwrap();
+            self.map_one(page_table, vpn)?;
         }
+        Ok(())
     }
     #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
@@ -442,6 +474,7 @@ impl MapArea {
     pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
             self.unmap_one(page_table, vpn)
+                .expect("failed to unmap shrinking page")
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
@@ -458,7 +491,7 @@ impl MapArea {
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
-    pub fn copy_data(&mut self, page_table: &PageTable, data: &[u8]) {
+    pub fn copy_data(&mut self, page_table: &PageTable, data: &[u8]) -> KernelResult<()> {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
@@ -467,7 +500,7 @@ impl MapArea {
             let src = &data[start..len.min(start + PAGE_SIZE)];
             let dst = &mut page_table
                 .translate(current_vpn)
-                .unwrap()
+                .ok_or(KernelError::VirtAddrNotMapped)?
                 .ppn()
                 .get_bytes_array()[..src.len()];
             dst.copy_from_slice(src);
@@ -477,6 +510,7 @@ impl MapArea {
             }
             current_vpn.step();
         }
+        Ok(())
     }
     pub fn is_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
         let start_vpn = start_va.floor();

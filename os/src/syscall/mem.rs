@@ -2,6 +2,7 @@ use crate::{
     config::PAGE_SIZE,
     task::{mmap_current, munmap_current},
 };
+use log::warn;
 
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     // 这里我们要求 start 必须是页对齐的，否则返回错误
@@ -26,7 +27,14 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     // 对end进行页对齐，如果end不是页对齐的，则向上取整到下一个页边界
     let end = (end.unwrap() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
-    mmap_current(start, end, prot << 1)
+    let result = mmap_current(start, end, prot << 1);
+    if result < 0 {
+        warn!(
+            "mmap 失败: start={:#x}, len={:#x}, prot={:#b}",
+            start, len, prot
+        );
+    }
+    result
 }
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
@@ -44,5 +52,9 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     // 对end进行页对齐，如果end不是页对齐的，则向上取整到下一个页边界
     let end = (end.unwrap() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
-    munmap_current(start, end)
+    let result = munmap_current(start, end);
+    if result < 0 {
+        warn!("munmap 失败: start={:#x}, len={:#x}", start, len);
+    }
+    result
 }

@@ -97,11 +97,14 @@ pub fn kstack_alloc() -> KernelStack {
         "分配内核栈 ID = {}, bottom = {:#x}, top = {:#x}",
         kstack_id, kstack_bottom, kstack_top
     );
-    KERNEL_SPACE.exclusive_access().insert_framed_area(
-        VirtAddr(kstack_bottom),
-        VirtAddr(kstack_top),
-        MapPermission::R | MapPermission::W,
-    );
+    KERNEL_SPACE
+        .exclusive_access()
+        .insert_framed_area(
+            VirtAddr(kstack_bottom),
+            VirtAddr(kstack_top),
+            MapPermission::R | MapPermission::W,
+        )
+        .expect("failed to map kernel stack");
     KernelStack(kstack_id)
 }
 
@@ -110,7 +113,8 @@ impl Drop for KernelStack {
         let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(self.0);
         KERNEL_SPACE
             .exclusive_access()
-            .munmap(kernel_stack_bottom, kernel_stack_top);
+            .munmap(kernel_stack_bottom, kernel_stack_top)
+            .expect("failed to unmap kernel stack");
         KSTACK_ALLOCATOR.exclusive_access().dealloc(self.0);
     }
 }
@@ -162,22 +166,28 @@ impl ThreadUserRes {
             "分配用户栈，tid = {}, bottom = {:#x}, top = {:#x}",
             self.tid, user_stack_bottom, user_stack_top
         );
-        process_inner.memory_set.insert_framed_area(
-            VirtAddr(user_stack_bottom),
-            VirtAddr(user_stack_top),
-            MapPermission::R | MapPermission::W | MapPermission::U,
-        );
+        process_inner
+            .memory_set
+            .insert_framed_area(
+                VirtAddr(user_stack_bottom),
+                VirtAddr(user_stack_top),
+                MapPermission::R | MapPermission::W | MapPermission::U,
+            )
+            .expect("failed to map user stack");
         // 分配 trap_cx
         let (trap_cx_bottom, trap_cx_top) = user_trap_cx_position(self.tid);
         info!(
             "分配 trap context，tid = {}, bottom = {:#x}, top = {:#x}",
             self.tid, trap_cx_bottom, trap_cx_top
         );
-        process_inner.memory_set.insert_framed_area(
-            VirtAddr(trap_cx_bottom),
-            VirtAddr(trap_cx_top),
-            MapPermission::R | MapPermission::W,
-        );
+        process_inner
+            .memory_set
+            .insert_framed_area(
+                VirtAddr(trap_cx_bottom),
+                VirtAddr(trap_cx_top),
+                MapPermission::R | MapPermission::W,
+            )
+            .expect("failed to map trap context");
     }
 
     fn dealloc_user_res(&self) {
@@ -188,10 +198,14 @@ impl ThreadUserRes {
         let (user_stack_bottom, user_stack_top) = user_stack_position(self.tid);
         process_inner
             .memory_set
-            .munmap(user_stack_bottom, user_stack_top);
+            .munmap(user_stack_bottom, user_stack_top)
+            .expect("failed to unmap user stack");
         // dealloc trap_cx manually
         let (trap_cx_bottom, trap_cx_top) = user_trap_cx_position(self.tid);
-        process_inner.memory_set.munmap(trap_cx_bottom, trap_cx_top);
+        process_inner
+            .memory_set
+            .munmap(trap_cx_bottom, trap_cx_top)
+            .expect("failed to unmap trap context");
     }
 
     #[allow(unused)]

@@ -3,6 +3,7 @@ use alloc::{string::String, vec};
 use bitflags::bitflags;
 
 use crate::config::PAGE_SIZE_BITS;
+use crate::error::{KernelError, KernelResult};
 use crate::mem::KERNEL_SPACE;
 use crate::mem::addr::PhysAddr;
 use crate::mem::{
@@ -53,7 +54,7 @@ impl PageTableEntry {
         PhysPageNum(self.bits >> 10 & ((1usize << 44) - 1))
     }
     pub fn flags(&self) -> PTEFlags {
-        PTEFlags::from_bits(self.bits as u8).unwrap()
+        PTEFlags::from_bits_truncate(self.bits as u8)
     }
     pub fn is_valid(&self) -> bool {
         self.flags().contains(PTEFlags::V)
@@ -86,24 +87,24 @@ impl PageTable {
         }
     }
 
-    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
-        let pte = self.find_pte_create(vpn).unwrap();
-        assert!(
-            !pte.is_valid(),
-            "PageTable::map: vpn {vpn:?} is already mapped"
-        );
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) -> KernelResult<()> {
+        let pte = self.find_pte_create(vpn)?;
+        if pte.is_valid() {
+            return Err(KernelError::PageAlreadyMapped);
+        }
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        Ok(())
     }
-    pub fn unmap(&mut self, vpn: VirtPageNum) {
-        let pte = self.find_pte_create(vpn).unwrap();
-        assert!(
-            pte.is_valid(),
-            "PageTable::unmap: vpn {vpn:?} is not mapped"
-        );
+    pub fn unmap(&mut self, vpn: VirtPageNum) -> KernelResult<()> {
+        let pte = self.find_pte_create(vpn)?;
+        if !pte.is_valid() {
+            return Err(KernelError::PageNotMapped);
+        }
         *pte = PageTableEntry::empty();
+        Ok(())
     }
 
-    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+    fn find_pte_create(&mut self, vpn: VirtPageNum) -> KernelResult<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result = None;
@@ -115,13 +116,13 @@ impl PageTable {
                 break;
             }
             if !pte.is_valid() {
-                let frame = frame_alloc()?;
+                let frame = frame_alloc().ok_or(KernelError::FrameAllocFailed)?;
                 *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
                 self.frames.push(frame);
             }
             ppn = pte.ppn();
         }
-        result
+        result.ok_or(KernelError::PageTableWalkFailed)
     }
 
     pub fn from_token(satp: usize) -> Self {
